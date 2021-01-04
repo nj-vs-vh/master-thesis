@@ -1,7 +1,9 @@
 import math
 import numpy as np
 from matplotlib import pyplot as plt
+import numdifftools as nd
 
+from functools import partial
 from scipy.interpolate import interp1d
 
 from typing import Union, Callable
@@ -11,8 +13,7 @@ from nptyping import NDArray
 rng = np.random.default_rng()
 
 
-class RandomizedIR:
-
+class RandomizedIr:
     def __init__(self, ir_x: NDArray, ir_y: Union[NDArray, Callable[[], NDArray]], binsize: float = 1.0):
         """Create randomized impulse response
 
@@ -37,8 +38,12 @@ class RandomizedIR:
         if not isinstance(ir_y_realization, NDArray) or ir_y_realization.shape != ir_x.shape:
             raise ValueError("ir_y must be or return numpy array of the same shape as ir_x")
 
+    def _realization(self):
+        # later add coeffs and shifts
+        return self.base_ir_generator()
+
     def __call__(self, x: NDArray) -> NDArray:
-        """Return realization of randomized IR at given points
+        """Evaluate randomized IR (i.e. its random realization) at given points
 
         Args:
             x (NDArray): query points for IR
@@ -47,16 +52,16 @@ class RandomizedIR:
             NDArray: realization of randomized IR
         """
         return interp1d(
-            self.ir_x, self.base_ir_generator(), kind='linear', copy=False, fill_value=0, bounds_error=False
+            self.ir_x, self._realization(), kind='linear', copy=False, fill_value=0, bounds_error=False
         )(x)
 
     def plot_realization(self):
         ax = plt.subplot(111)
-        ax.plot(self.ir_x, self.base_ir_generator())
+        ax.plot(self.ir_x, self._realization())
         plt.show()
 
     def convolve_with_deltas(
-        self, delta_ns: NDArray, inbin_invcdf: Callable[[float], float] = lambda x: x, debug_inbin_times: bool = False
+        self, delta_ns: NDArray, inbin_invcdf: Callable[[float], float] = None, debug_inbin_times: bool = False
     ) -> NDArray:
         """Given a number of delta function in each bin, return their convolution with the RIR. Delta times are assumed
         to be equally distributed in each bin.
@@ -66,9 +71,9 @@ class RandomizedIR:
             inbin_invcdf (Callable[[float], float], optional): inverse CDF of delta time distribution inside one bin.
                                                                Must have the followind properties: inbin_invcdf(0) = 0,
                                                                inbin_invcdf(1) = 1, monotonous growth.
-                                                               Default is inbin_invcdf(x) = x, i.e. uniform.
+                                                               Defaults to None, interpreted as uniform distribution.
             debug_inbin_times (bool, optional): if True, print mean and std of inbin time distribution. Useful for
-                                                debugging inbin_invcdf. Default is False
+                                                debugging inbin_invcdf. Defaults to False.
 
         Returns:
             NDArray: convoluted signal
@@ -76,7 +81,7 @@ class RandomizedIR:
         if not isinstance(delta_ns, NDArray) or delta_ns.ndim != 1 or delta_ns.dtype != int:
             raise ValueError("delta_ns must be one dimensional numpy array of integers")
 
-        if debug_inbin_times:
+        if debug_inbin_times and inbin_invcdf is not None:
             n_test_sample = 10000
             sample = np.vectorize(inbin_invcdf)(rng.random(size=(n_test_sample,)))
             print(f"Inbin times are distributed with mean = {sample.mean():.3f} and sigma={sample.std():.3f}")
@@ -91,28 +96,105 @@ class RandomizedIR:
 
         for i, n_i in enumerate(delta_ns):
             for _ in range(n_i):
-                inbin_time = inbin_invcdf(rng.random())
+                uniform_sample = rng.random()
+                inbin_time = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
                 out_y[i:i+self.nbins] += self(ir_x_whole_bins + (1 - inbin_time))
         return out_x, out_y
 
-    # def 
 
+class RandomizedIrStats:
+    def __init__(self, rir: RandomizedIr, samplesize: int = 100000, inbin_invcdf: Callable[[float], float] = None):
+        """Calculate and store statistical representation of randomized IR
 
-if __name__ == "__main__":
-    from utils import generate_poissonian_ns
+        Args:
+            rir (RandomizedIr): RandIR for calculation
+            samplesize (int, optional): amount of sample delta functions for each IR bin. Defaults to 100000.
+            inbin_invcdf (Callable[[float], float], optional): See RanodmizedIr's convolve_with_deltas method.
+        """
+        self.rir = rir
+        self.samples = np.zeros((rir.nbins, samplesize))
 
-    n = generate_poissonian_ns(50, 50)
+        if inbin_invcdf is not None:
+            inbin_invcdf = np.vectorize(inbin_invcdf)
+        for ibin in range(rir.nbins):
+            uniform_sample = rng.random(size=(1, samplesize))
+            inbin_times_sample = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
+            self.samples[ibin, :] = rir(ibin + inbin_times_sample)
 
-    ir_x = np.arange(0, 1000) / 50
-    ir_y = np.zeros_like(ir_x) + 0.1
+    def plot_samples(self):
+        fig, ax = plt.subplots(figsize=(8, 7))
+        for ibin, sample in enumerate(self.samples):
+            ax.hist(sample, label=f"values at lag {ibin + 1}", alpha=0.3)
+        ax.legend()
+        plt.show()
 
-    rir = RandomizedIR(ir_x, ir_y)
+    def mgf(self, t: float, n: int, lag: int) -> float:
+        """Calculate MGF (moment generating function) at argument t for contrbution of deltas after lag bins
 
-    x, y = rir.convolve_with_deltas(n)
+        Args:
+            t (float): mgf internal argument
+            n (int): number of delta functions in bin
+            lag (int): contribution lag for bin. Minimum value is 1, because bins are numbered at lower bound.
 
-    ax = plt.subplot(111)
-    for i in range(len(n)):
-        ax.axvspan(i, i+1, facecolor=([0, 0, 0] if i % 2 == 0 else [0.3, 0.3, 0.3]), alpha=0.1, edgecolor=None)
-    ax.axhline(0, color='black')
-    ax.step(x, y, '.-', where='post')
-    plt.show()
+        Returns:
+            NDArray: MGF(t) value
+        """
+        single_delta_mgf = np.mean(np.exp(t * self.samples[lag-1, :]))
+        return np.power(single_delta_mgf, n)
+
+    def mgf_moment(self, i: int, n: int, lag: int) -> float:
+        """Compute ith moment of contrbution of deltas after lag bins using MGF
+
+        Args:
+            i (int): [description]
+            n (int): [description]
+            lag (int): [description]
+
+        Returns:
+            float: [description]
+        """
+        derivative = nd.Derivative(partial(self.mgf, n=n, lag=lag), n=i, full_output=True)
+        val, info = derivative(0)
+        return val
+
+    def plot_moments(self, n: int, lag: int):
+        fig, ax = plt.subplots(figsize=(8, 7))
+
+        sample_1 = self.samples[lag-1, :]
+        sample_n = np.zeros_like(sample_1)
+        for _ in range(n):
+            sample_n += rng.permutation(sample_1)
+
+        ax.hist(sample_n, alpha=0.5, label=f'sample for {n} delta(s) at lag {lag}')
+
+        # ax.axvline(bootstrapped_mean, color='green', label='bootstrapped mean')
+        # ax.axvspan(
+        #     bootstrapped_mean - bootstrapped_std,
+        #     bootstrapped_mean + bootstrapped_std,
+        #     color='green',
+        #     alpha=0.3,
+        #     label='bootstrapped sigma'
+        # )
+
+        mgf_mean = self.mgf_moment(1, n, lag)
+        mgf_std = np.sqrt(self.mgf_moment(2, n, lag) - mgf_mean ** 2)
+        bootstrapped_mean = np.mean(sample_n)
+        bootstrapped_std = np.std(sample_n)
+        print(
+            f"bootsrapped mean differs by {np.abs(bootstrapped_mean - mgf_mean)}, "
+            + f"std by {np.abs(bootstrapped_std - mgf_std)}"
+        )
+        ax.axvline(mgf_mean, color='red', label='MGF mean')
+        ax.axvspan(mgf_mean - mgf_std, mgf_mean + mgf_std, color='red', alpha=0.3, label='MGF sigma')
+        ax.legend()
+        plt.show()
+
+    def plot_mgf(self, tmax: float, n: int = 1, lag: int = 1):
+        t = np.linspace(0, tmax, 100)
+        mgf = np.zeros_like(t)
+        for i, t_i in enumerate(t):
+            mgf[i] = self.mgf(t_i, n, lag)
+
+        fig, ax = plt.subplots(figsize=(8, 7))
+        ax.plot(t, mgf)
+        plt.show()
