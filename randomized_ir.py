@@ -55,7 +55,9 @@ class RandomizedIR:
         ax.plot(self.ir_x, self.base_ir_generator())
         plt.show()
 
-    def convolve_with_deltas(self, delta_ns: NDArray, inbin_invcdf: Callable[[float], float] = lambda x: x) -> NDArray:
+    def convolve_with_deltas(
+        self, delta_ns: NDArray, inbin_invcdf: Callable[[float], float] = lambda x: x, debug_inbin_times: bool = False
+    ) -> NDArray:
         """Given a number of delta function in each bin, return their convolution with the RIR. Delta times are assumed
         to be equally distributed in each bin.
 
@@ -65,6 +67,8 @@ class RandomizedIR:
                                                                Must have the followind properties: inbin_invcdf(0) = 0,
                                                                inbin_invcdf(1) = 1, monotonous growth.
                                                                Default is inbin_invcdf(x) = x, i.e. uniform.
+            debug_inbin_times (bool, optional): if True, print mean and std of inbin time distribution. Useful for
+                                                debugging inbin_invcdf. Default is False
 
         Returns:
             NDArray: convoluted signal
@@ -72,18 +76,26 @@ class RandomizedIR:
         if not isinstance(delta_ns, NDArray) or delta_ns.ndim != 1 or delta_ns.dtype != int:
             raise ValueError("delta_ns must be one dimensional numpy array of integers")
 
+        if debug_inbin_times:
+            n_test_sample = 10000
+            sample = np.vectorize(inbin_invcdf)(rng.random(size=(n_test_sample,)))
+            print(f"Inbin times are distributed with mean = {sample.mean():.3f} and sigma={sample.std():.3f}")
+
         N_bins = delta_ns.size
 
         convoluted_bins = N_bins + self.nbins
         out_x = np.arange(0, convoluted_bins) + 1  # lag is because deltas from bin 0 (i.e. [0 1]) only appear in bin 1
         out_y = np.zeros((convoluted_bins,))
 
-        ir_binned_x = np.arange(0, self.nbins, step=1, dtype=int)
+        ir_x_whole_bins = np.arange(0, self.nbins, step=1.0)
 
         for i, n_i in enumerate(delta_ns):
             for _ in range(n_i):
-                out_y[i:i+self.nbins] += self(ir_binned_x + inbin_invcdf(rng.random()))
+                inbin_time = inbin_invcdf(rng.random())
+                out_y[i:i+self.nbins] += self(ir_x_whole_bins + (1 - inbin_time))
         return out_x, out_y
+
+    # def 
 
 
 if __name__ == "__main__":
