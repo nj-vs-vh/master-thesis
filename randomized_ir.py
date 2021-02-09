@@ -39,7 +39,7 @@ class RandomizedIr:
             raise ValueError("ir_y must be or return numpy array of the same shape as ir_x")
 
     def _realization(self):
-        # later add coeffs and shifts
+        # later other add coeffs and shifts
         return self.base_ir_generator()
 
     def __call__(self, x: NDArray) -> NDArray:
@@ -120,6 +120,11 @@ class RandomizedIrStats:
             uniform_sample = rng.random(size=(1, samplesize))
             inbin_times_sample = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
             self.samples[ibin, :] = rir(ibin + inbin_times_sample)
+        self.sample_means = np.mean(self.samples, axis=1)
+
+    @property
+    def nbins(self) -> int:
+        return self.rir.nbins
 
     def plot_samples(self):
         fig, ax = plt.subplots(figsize=(8, 7))
@@ -167,23 +172,8 @@ class RandomizedIrStats:
 
         ax.hist(sample_n, alpha=0.5, label=f'sample for {n} delta(s) at lag {lag}')
 
-        # ax.axvline(bootstrapped_mean, color='green', label='bootstrapped mean')
-        # ax.axvspan(
-        #     bootstrapped_mean - bootstrapped_std,
-        #     bootstrapped_mean + bootstrapped_std,
-        #     color='green',
-        #     alpha=0.3,
-        #     label='bootstrapped sigma'
-        # )
-
         mgf_mean = self.mgf_moment(1, n, lag)
         mgf_std = np.sqrt(self.mgf_moment(2, n, lag) - mgf_mean ** 2)
-        bootstrapped_mean = np.mean(sample_n)
-        bootstrapped_std = np.std(sample_n)
-        print(
-            f"bootsrapped mean differs by {np.abs(bootstrapped_mean - mgf_mean)}, "
-            + f"std by {np.abs(bootstrapped_std - mgf_std)}"
-        )
         ax.axvline(mgf_mean, color='red', label='MGF mean')
         ax.axvspan(mgf_mean - mgf_std, mgf_mean + mgf_std, color='red', alpha=0.3, label='MGF sigma')
         ax.legend()
