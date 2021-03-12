@@ -55,8 +55,8 @@ class RandomizedIr:
             self.ir_x, self._realization(), kind='linear', copy=False, fill_value=0, bounds_error=False
         )(x)
 
-    def plot_realization(self):
-        ax = plt.subplot(111)
+    def plot_realization(self, ax: plt.Axes = None):
+        ax = ax or plt.subplot(111)
         ax.plot(self.ir_x, self._realization())
         plt.show()
 
