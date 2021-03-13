@@ -80,7 +80,7 @@
 	
 	\subsubsection{Средние значения}
 	
-	С вычислительной точки зрения нетрудно заранее вычислить для данной РИХ значения $C(1, l)$ для $l = 0 \ldots L$. Так как фотоны независимы друг от друга, то из этих эмпирических распределений оказывается возможно записать уравнения на средние значения величин $S_j$. А именно, обозначая $c_l \equiv C(1, l)$,
+	С вычислительной точки зрения нетрудно заранее вычислить для данной РИХ выборки значений $C(1, l)$ для $l = 0 \ldots L$. Так как фотоны независимы друг от друга, то из этих эмпирических распределений оказывается возможно записать уравнения на средние значения величин $S_j$. А именно, обозначая $c_l \equiv \mathbb{E} \; C(1, l)$,
 	
 	\begin{equation}
 		\hat{S}_j = \mathbb{E} \; S_j = \sum_{l=0}^{L} \mathbb{E} \; C(n_{j-l}, l) = \sum_{l=0}^{L} n_{j-l} \; \mathbb{E} \; C(1, l) = \sum_{l=0}^{L} n_{j-l} c_l
@@ -90,26 +90,29 @@
 	
 	\begin{equation}
 		\begin{pmatrix} 
-			c_0   &  0   &  0   &\dotsm&   0     \\
+			c_0   &  0   &  0   &\dotsm&  0     \\
 			c_1   & c_0  &  0   &\dotsm&  0     \\
 			c_2   & c_1  & c_0  &      & \vdots \\
 			c_3   & c_2  & c_1  &\ddots&  0     \\
      	    \vdots& c_3  & c_2  &\ddots&  c_0   \\
-			c_L   &      & c_3  &\ddots&  c_1   \\
-			0     & c_L  &      &\ddots&  c_2   \\
+			c_L   &\vdots& c_3  &\ddots&  c_1   \\
+			0     & c_L  &\vdots&\ddots&  c_2   \\
 			\vdots&      & c_L  &      &  c_3   \\
 			0     &\dotsm&  0   &\ddots& \vdots \\
 			0     &\dotsm& 0    &   0  &  c_L   \\
 		\end{pmatrix}
 		\begin{pmatrix} 
-			n_1 \\ n_2 \\ \vdots \\ n_N
+			n_1 \\ n_2 \\ n_3 \\ \vdots \\ n_N
 		\end{pmatrix}
 		=
 		\begin{pmatrix} 
-			\hat{S}_1 \\ \hat{S}_2 \\ \vdots \\
-			\hat{S}_N \\
-			\hat{S}_{N+1} \\ \vdots \\ \hat{S}_{N+L}
+			\hat{S}_1 \\ \hat{S}_2 \\
+			\vdots \\
+			\hat{S}_N \\ \hat{S}_{N+1} \\
+			\vdots \\
+			\hat{S}_{N+L}
 		\end{pmatrix}
+		\label{eq:mean_matrix}
 	\end{equation}
 	
 \end{document}
