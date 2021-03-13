@@ -1,12 +1,16 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 
 from typing import Any, Optional
 from nptyping import NDArray
 
 
+matplotlib.rcParams.update({'font.size': 12})
+
+
 N_COLOR = '#0477DC'
-N_ESTIMATION_COLOR = '#e667b3'
+N_ESTIMATION_COLOR = '#e33b65'
 S_COLOR = '#DC6904'
 
 
@@ -15,9 +19,14 @@ MID_FIGSIZE = (7, 5)
 LARGE_FIGSIZE = (10, 7)
 
 
-def plot_convolution(
-    n_vec: NDArray[(Any,), int], S_vec: NDArray[(Any,), float], save_to_filename: Optional[str] = None
-):
+def _save_or_show(filename: Optional[str]):
+    if filename:
+        plt.savefig(f'./doc/pic/{filename}.pdf')
+    else:
+        plt.show()
+
+
+def plot_convolution(n_vec: NDArray[(Any,), int], S_vec: NDArray[(Any,), float], filename=None):
     N = n_vec.size
     L = S_vec.size - N
 
@@ -46,16 +55,13 @@ def plot_convolution(
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(bottom=0)
 
-    if save_to_filename:
-        plt.savefig(f'./doc/pic/{save_to_filename}.pdf')
-    else:
-        plt.show()
+    _save_or_show(filename)
 
 
-def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArray[(Any,), int]):
+def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArray[(Any,), int], filename=None):
     N = n_vec.size
 
-    fig, ax = plt.subplots(figsize=LARGE_FIGSIZE)
+    fig, ax = plt.subplots(figsize=MID_FIGSIZE)
 
     bin_indices = np.arange(N)
     ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=N_COLOR, label='$\\vec{n}$')
@@ -64,8 +70,10 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
         bin_indices,
         bin_indices + 1,
         colors=[N_ESTIMATION_COLOR],
+        linewidths=[2],
         label='$\\vec{n}$ estimation when $S_j = \\mathbb{E} \\; S_j$',
     )
     ax.set_ylim(bottom=0)
     ax.legend()
-    plt.show()
+
+    _save_or_show(filename)
