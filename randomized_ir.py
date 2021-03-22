@@ -3,9 +3,12 @@ import numpy as np
 from matplotlib import pyplot as plt
 import numdifftools as nd
 
-from functools import partial
 from scipy.interpolate import interp1d
+from scipy.stats import norm
 from numpy.linalg import pinv
+from math import pi
+
+from functools import partial, lru_cache
 
 from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
@@ -144,26 +147,61 @@ class RandomizedIrStats:
             rir_realization = rir(bins + inbin_t)
             self.ir_samples[:, sample_i] = rir_realization
 
-        # mean of C(1, l)
-        self.c_vec = np.mean(self.ir_samples, axis=1)
+        # means and dispersions of C(1, l)
+        self.ir_sample_mean = np.mean(self.ir_samples, axis=1)
+        self.ir_sample_D = np.power(np.std(self.ir_samples, axis=1), 2)
 
     @property
     def L(self) -> int:
         return self.rir.L
 
     def estimate_n_vec(self, S_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
-        """LLS-based estimation of n vector. See \\subsection{Грубая оценка методом наименьших квадратов}"""
+        """LLS-based estimation of n vector using Moore-Penrose pseudoinverse matrix.
+
+        See \\subsection{Грубая оценка методом наименьших квадратов}
+        """
         L = self.L
         N = S_vec.size - L
         C = np.zeros((N + L, N))  # see \label{eq:mean_matrix}
+        c_vec = self.ir_sample_mean
         for i in range(N):
-            C[i:i+L, i] = self.c_vec
-        return pinv(C) @ S_vec  # LLS solution with Moore-Penrose pseudoinverse matrix
+            C[i : i + L, i] = c_vec  # noqa
+        return pinv(C) @ S_vec
 
-    # MGF calculation methods for MCMC
+    def get_norm_posterior_loglikelihood(
+        self, S_vec: NDArray[(Any,), float]
+    ) -> Callable[[NDArray[(Any,), float]], float]:
+
+        L = self.L
+        N = S_vec.size - L
+
+        def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
+            if np.any(n_vec < 0):
+                return - np.inf
+            logL = 0
+            for j, s_j in enumerate(S_vec):
+                if j == L:
+                    break
+                Es_j = 0
+                Ds_j = 0
+                for lag in range(L):
+                    i = j - lag
+                    if i >= N:
+                        continue
+                    if i < 0:
+                        break
+                    Es_j += n_vec[i] * self.ir_sample_mean[lag]
+                    Ds_j += n_vec[i] * self.ir_sample_D[lag]
+                logL_addition = norm.logpdf(s_j, loc=Es_j, scale=np.sqrt(Ds_j))
+                logL += logL_addition if not np.isnan(logL_addition) else 0
+            return logL
+
+        return loglikelihood
+
+    # MGF calculation methods
 
     def mgf(self, t: float, n: int, lag: int) -> float:
-        """Calculate MGF (moment generating function) at argument t for contrbution of deltas after lag bins
+        """Calculate MGF (moment generating function) at argument t for C(n, l) (contrbution of n deltas after l bins)
 
         Args:
             t (float): mgf internal argument
@@ -173,11 +211,20 @@ class RandomizedIrStats:
         Returns:
             NDArray: MGF(t) value
         """
-        single_delta_mgf = np.mean(np.exp(t * self.ir_samples[lag - 1, :]))
-        return np.power(single_delta_mgf, n)
+        return np.power(self._mgf_n_1(t, lag), n)
 
+    def _mgf_n_1(self, t: float, lag: int) -> float:
+        """mgf for n = 1"""
+        MGF_EPSILON = 1e-7
+
+        if abs(t) < MGF_EPSILON:
+            return 1
+        else:
+            return np.mean(np.exp(t * self.ir_samples[lag - 1, :]))
+
+    @lru_cache(maxsize=100000)
     def mgf_moment(self, i: int, n: int, lag: int) -> float:
-        """Compute ith moment of contrbution of deltas after lag bins using MGF
+        """Compute ith moment of C(n, lag) using MGF
 
         Args:
             i (int): [description]
@@ -187,17 +234,30 @@ class RandomizedIrStats:
         Returns:
             float: [description]
         """
+
         derivative = nd.Derivative(partial(self.mgf, n=n, lag=lag), n=i, full_output=True)
-        val, info = derivative(0)
-        return val
+        moment, info = derivative(0)
+        return moment
 
     # diagnostic plots
 
-    def plot_samples(self):
+    def plot_samples(self, max_lag: int = None):
+        if not max_lag:
+            max_lag = self.ir_samples.shape[0] + 1
         fig, ax = plt.subplots(figsize=(8, 7))
-        for ibin, sample in enumerate(self.ir_samples):
-            ax.hist(sample, label=f"values at lag {ibin + 1}", alpha=0.3)
+        for lag_0_based, sample in enumerate(self.ir_samples):
+            lag = lag_0_based + 1
+            if lag > max_lag:
+                break
+            _, _, histogram = ax.hist(sample, label=f"lag={lag}", alpha=0.3, density=True)
+            mu = self.mgf_moment(1, 1, lag)
+            sigma = np.sqrt(self.mgf_moment(2, 1, lag) - mu ** 2)
+            pdf_t = np.linspace(np.min(sample), np.max(sample), 100)
+            pdf = (1 / (sigma * np.sqrt(2 * pi))) * np.exp(-0.5 * np.power((pdf_t - mu) / (sigma), 2))
+            ax.plot(pdf_t, pdf, color=histogram[0]._facecolor, alpha=1)
+
         ax.legend()
+        ax.set_yscale('log')
         plt.show()
 
     def plot_moments(self, n: int, lag: int):
@@ -225,20 +285,27 @@ class RandomizedIrStats:
 
     def plot_mgf(self, tmax: float, n: int = 1, lag: int = 1):
         """MGF is being differentiated at 0 -- this plot helps assess correctess of the numerical derivative"""
-        t = np.linspace(0, tmax, 100)
+        t = np.linspace(-tmax, tmax, 100)
         mgf = np.zeros_like(t)
         for i, t_i in enumerate(t):
             mgf[i] = self.mgf(t_i, n, lag)
 
         first_derivative = self.mgf_moment(1, n, lag)
-        second_derivative = self.mgf_moment(1, n, lag)
+        second_derivative = self.mgf_moment(2, n, lag)
+        third_derivativa = self.mgf_moment(3, n, lag)
         linear_approx = 1 + first_derivative * t
-        quadratic_approx = 1 + first_derivative * t + second_derivative * np.power(t, 2) / 2
+        quadratic_approx = linear_approx + second_derivative * np.power(t, 2) / 2
+        cubic_approx = quadratic_approx + third_derivativa * np.power(t, 3) / 6
 
         fig, ax = plt.subplots(figsize=(8, 7))
-        ax.plot(t, mgf, label='MGF')
-        ax.plot(t, linear_approx, '--', label='Linear (mean) approx')
-        ax.plot(t, quadratic_approx, '--', label='Quadratic (mean and std) approx')
+        ax.plot(t, mgf - linear_approx, label='MGF')
+        for approx, desription in [
+            # (linear_approx, 'linear (mean)'),
+            (quadratic_approx, 'quadratic (mean and std)'),
+            (cubic_approx, 'cubic (mean, std and asymm)'),
+        ]:
+            ax.plot(t, approx - linear_approx, '--', label=f'$\\Delta$ for {desription} approx')
+        # ax.set_yscale('log')
         ax.legend()
         plt.show()
 
@@ -249,8 +316,8 @@ if __name__ == "__main__":
 
     L_true = 3.5
     ir_x = np.linspace(0, L_true, int(L_true * 100))
-    ir_y = np.exp(- ir_x)
-    rir = RandomizedIr(ir_x, ir_y, factor=lambda: 0.5 + random()*0.5)
+    ir_y = np.exp(-ir_x)
+    rir = RandomizedIr(ir_x, ir_y, factor=lambda: 0.5 + random() * 0.5)
 
     N = 5
     n_vec_mean = 15
@@ -258,6 +325,6 @@ if __name__ == "__main__":
 
     S_vec = rir.convolve_with_n_vec(n_vec)
 
-    stats = RandomizedIrStats(rir, samplesize=10**6)
+    stats = RandomizedIrStats(rir, samplesize=10 ** 6)
 
     n_vec_estimate = stats.estimate_n_vec(S_vec)
