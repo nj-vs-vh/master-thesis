@@ -13,6 +13,8 @@ from functools import partial, lru_cache
 from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
 
+import utils
+
 
 rng = np.random.default_rng()
 
@@ -162,10 +164,14 @@ class RandomizedIrStats:
         """
         L = self.L
         N = S_vec.size - L
+
         C = np.zeros((N + L, N))  # see \label{eq:mean_matrix}
         c_vec = self.ir_sample_mean
         for i in range(N):
             C[i : i + L, i] = c_vec  # noqa
+
+        C = utils.slice_edge_effects(C, L, N)
+        S_vec = utils.slice_edge_effects(S_vec, L, N)
         return pinv(C) @ S_vec
 
     def get_norm_posterior_loglikelihood(
