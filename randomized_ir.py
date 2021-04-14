@@ -4,11 +4,12 @@ from matplotlib import pyplot as plt
 import numdifftools as nd
 
 from scipy.interpolate import interp1d
-from scipy.stats import norm
 from numpy.linalg import pinv
 from math import pi
 
 from functools import partial, lru_cache
+
+from numba import njit
 
 from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
@@ -38,7 +39,9 @@ class RandomizedIr:
                                        Defaults to 1.0.
         """
         if not isinstance(ir_x, NDArray) or ir_x.ndim != 1:
-            raise ValueError("ir_x must be one-dimensional numpy array")
+            raise ValueError("ir_x must be a one-dimensional numpy array")
+        if not ir_x[0] == 0:
+            raise ValueError("ir_x must start at zero")
         self.ir_x = ir_x / binsize
 
         if self.ir_x[1] - self.ir_x[0] >= 1:
@@ -110,8 +113,8 @@ class RandomizedIr:
 
         N = n_vec.size
 
-        convoluted_bins = N + self.L
-        out_y = np.zeros((convoluted_bins,))
+        convoluted_pts_count = N + self.L
+        out_y = np.zeros((convoluted_pts_count,))
 
         ir_x_whole_bins = np.arange(0, self.L, step=1.0)
 
@@ -138,15 +141,15 @@ class RandomizedIrStats:
             inbin_invcdf (Callable[[float], float], optional): See RanodmizedIr's convolve_with_deltas method.
         """
         self.rir = rir
-        self.ir_samples = np.zeros((self.L, samplesize))
+        sample_t = range(self.L + 1)
+        self.ir_samples = np.zeros((self.L + 1, samplesize))
 
         if inbin_invcdf is not None:
             inbin_invcdf = np.vectorize(inbin_invcdf)
         uniform_sample = rng.random(size=(samplesize,))
         inbin_times_sample = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
-        bins = range(self.L)
         for sample_i, inbin_t in enumerate(inbin_times_sample):
-            rir_realization = rir(bins + inbin_t)
+            rir_realization = rir(sample_t + inbin_t)
             self.ir_samples[:, sample_i] = rir_realization
 
         # means and dispersions of C(1, l)
@@ -157,52 +160,68 @@ class RandomizedIrStats:
     def L(self) -> int:
         return self.rir.L
 
-    def estimate_n_vec(self, S_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
+    def estimate_n_vec(self, s_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
         """LLS-based estimation of n vector using Moore-Penrose pseudoinverse matrix.
 
         See \\subsection{Грубая оценка методом наименьших квадратов}
         """
         L = self.L
-        N = S_vec.size - L
+        N = s_vec.size - L
 
-        C = np.zeros((N + L, N))  # see \label{eq:mean_matrix}
+        C = np.zeros((N + L + 1, N))  # see \label{eq:mean_matrix}
         c_vec = self.ir_sample_mean
         for i in range(N):
-            C[i : i + L, i] = c_vec  # noqa
+            C[i : i + L + 1, i] = c_vec  # noqa
 
         C = utils.slice_edge_effects(C, L, N)
-        S_vec = utils.slice_edge_effects(S_vec, L, N)
-        return pinv(C) @ S_vec
+        s_vec = utils.slice_edge_effects(s_vec, L, N)
+        return pinv(C) @ s_vec
 
-    def get_norm_posterior_loglikelihood(
-        self, S_vec: NDArray[(Any,), float]
-    ) -> Callable[[NDArray[(Any,), float]], float]:
+    def get_loglikelihood_normdist(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
+        """Loglikelihood assuming normal distribution of S_j"""
 
         L = self.L
-        N = S_vec.size - L
+        N = s_vec.size - L
+        # for nested function to be numbifiable
+        ir_sample_mean = self.ir_sample_mean
+        ir_sample_D = self.ir_sample_D
 
+        def propto_logpdf(x: float, mu: float, sigma: float) -> float:
+            return -(((x - mu) / (1.41421356237 * sigma)) ** 2)
+
+        @njit
         def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
-            if np.any(n_vec < 0):
-                return - np.inf
+            if np.any(n_vec < 0):  # guard for impossible values
+                return -np.inf
             logL = 0
-            for j, s_j in enumerate(S_vec):
-                if j == L:
-                    break
+            for j, s_j in enumerate(s_vec):
+                j += 1  # from indexing array (0-based) to indexing time points (1-based)
+                if j <= L or j > N:  # cutting off signal edges
+                    continue
                 Es_j = 0
                 Ds_j = 0
-                for lag in range(L):
+                for lag in range(L + 1):
                     i = j - lag
-                    if i >= N:
-                        continue
-                    if i < 0:
-                        break
-                    Es_j += n_vec[i] * self.ir_sample_mean[lag]
-                    Ds_j += n_vec[i] * self.ir_sample_D[lag]
-                logL_addition = norm.logpdf(s_j, loc=Es_j, scale=np.sqrt(Ds_j))
-                logL += logL_addition if not np.isnan(logL_addition) else 0
+                    i -= 1  # from indexing bins (1-based) to indexing array (0-based)
+                    Es_j += n_vec[i] * ir_sample_mean[lag]
+                    Ds_j += n_vec[i] * ir_sample_D[lag]
+                Sigma_s_j = np.sqrt(Ds_j)
+                logL_subtract = ((s_j - Es_j) / (1.41421356237 * Sigma_s_j)) ** 2
+                if np.isnan(logL_subtract):
+                    return - np.inf
+                logL -= logL_subtract
             return logL
 
         return loglikelihood
+
+    # def get_loglikelihood_monte_carlo(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
+        
+    #     def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
+    #         self.
+
+    #         return logL
+
+    #     return loglikelihood
 
     # MGF calculation methods
 
@@ -329,8 +348,8 @@ if __name__ == "__main__":
     n_vec_mean = 15
     n_vec = generate_poissonian_ns(n_vec_mean, N)
 
-    S_vec = rir.convolve_with_n_vec(n_vec)
+    s_vec = rir.convolve_with_n_vec(n_vec)
 
     stats = RandomizedIrStats(rir, samplesize=10 ** 6)
 
-    n_vec_estimate = stats.estimate_n_vec(S_vec)
+    n_vec_estimate = stats.estimate_n_vec(s_vec)

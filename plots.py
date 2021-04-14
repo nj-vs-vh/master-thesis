@@ -14,6 +14,9 @@ N_ESTIMATION_COLOR = '#e33b65'
 S_COLOR = '#DC6904'
 
 
+TIME_LABEL = 'Время, бины'
+
+
 # fine-tuned for notebook
 MID_FIGSIZE = (7, 5)
 LARGE_FIGSIZE = (10, 7)
@@ -26,9 +29,9 @@ def _save_or_show(filename: Optional[str]):
         plt.show()
 
 
-def plot_convolution(n_vec: NDArray[(Any,), int], S_vec: NDArray[(Any,), float], filename=None):
+def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float], filename=None):
     N = n_vec.size
-    L = S_vec.size - N
+    L = s_vec.size - N
 
     fig, ax1 = plt.subplots(figsize=MID_FIGSIZE)
 
@@ -40,8 +43,8 @@ def plot_convolution(n_vec: NDArray[(Any,), int], S_vec: NDArray[(Any,), float],
     # counts
     ax1.bar(np.arange(N) + 0.5, n_vec, width=0.7, color=N_COLOR)
 
-    ax1.set_xlabel('time, bin')
-    ax1.set_ylabel('$n_i$', color=N_COLOR)
+    ax1.set_xlabel(TIME_LABEL)
+    ax1.set_ylabel('$n$', color=N_COLOR)
     ax1.tick_params(axis='y', labelcolor=N_COLOR)
 
     ax2 = ax1.twinx()
@@ -49,13 +52,13 @@ def plot_convolution(n_vec: NDArray[(Any,), int], S_vec: NDArray[(Any,), float],
     t_S = np.arange(1, N + L + 1)
 
     def plot_signal_part(start, end, dashed):
-        ax2.plot(t_S[start:end], S_vec[start:end], ('.-' if not dashed else '.:'), color=S_COLOR)
+        ax2.plot(t_S[start:end], s_vec[start:end], ('.-' if not dashed else '.:'), color=S_COLOR)
 
     plot_signal_part(0, L + 1, dashed=True)  # t in [1, L] with +1 point to the right (connection)
     plot_signal_part(L, N, dashed=False)  # t in [L+1, N]
     plot_signal_part(N - 1, N + L, dashed=True)  # t in [N+1, N+L] with +1 point to the left (connection)
 
-    ax2.set_ylabel('$S_j$', color=S_COLOR)
+    ax2.set_ylabel('$s$', color=S_COLOR)
     ax2.tick_params(axis='y', labelcolor=S_COLOR)
 
     ax1.set_ylim(bottom=0)
@@ -86,10 +89,12 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
         bin_indices[L:] + 1,
         colors=[N_ESTIMATION_COLOR],
         linewidths=[2],
-        label='Оценка $\\vec{n}$ в предположении $s_j = \\mathbb{E} \\; S_j$',
+        label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
     )
 
     ax.set_ylim(bottom=0)
+    ax.set_xlabel(TIME_LABEL)
+    ax.set_ylabel('$n$')
     ax.legend()
 
     _save_or_show(filename)
@@ -102,19 +107,67 @@ def plot_mean_n_estimation_assessment(
 
     n_vec_estimation = n_vec_estimation[L:-L]
 
-    bin_edges = np.arange(n_vec.min()-1, n_vec.max()+1)
+    bin_edges = np.arange(n_vec.min() - 1, n_vec.max() + 1)
     for data, color, label in (
-        (n_vec, N_COLOR, 'Распределение $\\vec{n}$'),
-        (np.round(n_vec_estimation), N_ESTIMATION_COLOR, 'Распределение оцененных значений $\\vec{n}$'),
+        (n_vec, N_COLOR, '$\\vec{n}$'),
+        (np.round(n_vec_estimation), N_ESTIMATION_COLOR, 'Оценка $\\vec{n}$'),
     ):
         _, _, histogram = ax.hist(data, bins=bin_edges, color=color, alpha=0.4, density=True, label=label)
         ax.axvline(data.mean(), color=histogram[0]._facecolor, alpha=1)
 
     _, top = ax.get_ylim()
-    ax.set_ylim([0, top * 1.3])
+    ax.set_ylim([0, top * 1])
 
     ax.set_xlabel('$n$')
     ax.set_ylabel('Плотность вероятности')
     ax.legend()
 
     _save_or_show(filename)
+
+
+def plot_bayesian_mean_estimation(
+    n_vec: NDArray[(Any,), int], sample: NDArray[(Any, Any), float], L: int, filename=None
+):
+    N = n_vec.size
+    fig, ax = plt.subplots(figsize=MID_FIGSIZE)
+
+    bin_centers = np.arange(N) + 0.5
+    means = np.mean(sample, axis=0)
+    stds = np.std(sample, axis=0)
+
+    ax.bar(bin_centers, n_vec, width=0.9, color=N_COLOR, label='$\\vec{n}$')
+
+    # cutting edges with low quality poserior
+    bin_centers = bin_centers[L + 1 : -L]  # noqa
+    means = means[L + 1 : -L]  # noqa
+    stds = stds[L + 1 : -L]  # noqa
+    ax.hlines(
+        means,
+        bin_centers - 0.5,
+        bin_centers + 0.5,
+        colors=[N_ESTIMATION_COLOR],
+        linewidths=[2],
+    )
+
+    std_line_halfwidth = 0.4
+
+    ax.hlines(
+        means - stds,
+        bin_centers - std_line_halfwidth,
+        bin_centers + std_line_halfwidth,
+        colors=[N_ESTIMATION_COLOR],
+        linewidths=[1],
+    )
+    ax.hlines(
+        means + stds,
+        bin_centers - std_line_halfwidth,
+        bin_centers + std_line_halfwidth,
+        colors=[N_ESTIMATION_COLOR],
+        linewidths=[1],
+    )
+    ax.set_ylim(bottom=0)
+
+    ax.set_xlabel(TIME_LABEL)
+    ax.set_ylabel('n')
+
+    ax.legend()
