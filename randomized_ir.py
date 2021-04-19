@@ -15,6 +15,7 @@ from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
 
 import utils
+from ndepdf import ndepdf
 
 
 rng = np.random.default_rng()
@@ -206,22 +207,44 @@ class RandomizedIrStats:
                     Es_j += n_vec[i] * ir_sample_mean[lag]
                     Ds_j += n_vec[i] * ir_sample_D[lag]
                 Sigma_s_j = np.sqrt(Ds_j)
-                logL_subtract = ((s_j - Es_j) / (1.41421356237 * Sigma_s_j)) ** 2
-                if np.isnan(logL_subtract):
-                    return - np.inf
-                logL -= logL_subtract
+                logL_addition = (
+                    -0.918938533205  # log(sqrt(2 pi))
+                    - np.log(Sigma_s_j)
+                    - ((s_j - Es_j) / (1.41421356237 * Sigma_s_j)) ** 2
+                )
+                if np.isnan(logL_addition):
+                    return -np.inf
+                logL += logL_addition
             return logL
 
         return loglikelihood
 
-    # def get_loglikelihood_monte_carlo(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
-        
-    #     def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
-    #         self.
+    def get_loglikelihood_monte_carlo(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
+        L = self.L
+        N = s_vec.size - L
+        center_s_vec = s_vec[L:N]
 
-    #         return logL
+        def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
+            n_vec = n_vec.round().astype(int)
+            s_sample_size = 1000000
+            s_sample = np.zeros((s_vec.size, s_sample_size))
+            for s_sample_index in range(s_sample_size):
+                ir_sample_choice = self.ir_samples[
+                    :, rng.choice(np.arange(self.ir_samples.shape[1]), size=(n_vec.sum(),))
+                ]
+                s_modelled = np.zeros_like(s_vec)
+                ir_sample_index_offset = 0
+                for i, n in enumerate(n_vec):
+                    s_modelled[i : i + L + 1] += np.sum(  # noqa
+                        ir_sample_choice[:, ir_sample_index_offset : ir_sample_index_offset + n], axis=1  # noqa
+                    )
+                    ir_sample_index_offset += n
+                s_sample[:, s_sample_index] = s_modelled
 
-    #     return loglikelihood
+            s_sample = s_sample[L:N, :]  # cutting off edges from the sample
+            return np.log(ndepdf(s_sample, center_s_vec, bins=10, check_bin_count=True))
+
+        return loglikelihood
 
     # MGF calculation methods
 
@@ -336,6 +359,8 @@ class RandomizedIrStats:
 
 
 if __name__ == "__main__":
+    # testing MC vs normdist loglikelihood
+
     from random import random
     from utils import generate_poissonian_ns
 
@@ -344,12 +369,17 @@ if __name__ == "__main__":
     ir_y = np.exp(-ir_x)
     rir = RandomizedIr(ir_x, ir_y, factor=lambda: 0.5 + random() * 0.5)
 
-    N = 5
-    n_vec_mean = 15
+    N = 10
+    n_vec_mean = 20
     n_vec = generate_poissonian_ns(n_vec_mean, N)
 
     s_vec = rir.convolve_with_n_vec(n_vec)
 
-    stats = RandomizedIrStats(rir, samplesize=10 ** 6)
+    stats = RandomizedIrStats(rir, samplesize=10 ** 5)
 
     n_vec_estimate = stats.estimate_n_vec(s_vec)
+
+    loglike = stats.get_loglikelihood_normdist(s_vec)
+    loglike_mc = stats.get_loglikelihood_monte_carlo(s_vec)
+    print(loglike(n_vec_estimate))
+    print(loglike_mc(n_vec_estimate))
