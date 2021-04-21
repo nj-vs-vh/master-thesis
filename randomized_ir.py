@@ -11,6 +11,8 @@ from functools import partial, lru_cache
 
 from numba import njit
 
+from tqdm import tqdm_notebook
+
 from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
 
@@ -191,7 +193,7 @@ class RandomizedIrStats:
             return -(((x - mu) / (1.41421356237 * sigma)) ** 2)
 
         @njit
-        def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
+        def loglikelihood_normdist(n_vec: NDArray[(Any,), float]) -> float:
             if np.any(n_vec < 0):  # guard for impossible values
                 return -np.inf
             logL = 0
@@ -217,20 +219,21 @@ class RandomizedIrStats:
                 logL += logL_addition
             return logL
 
-        return loglikelihood
+        return loglikelihood_normdist
 
     def get_loglikelihood_monte_carlo(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
         L = self.L
         N = s_vec.size - L
         center_s_vec = s_vec[L:N]
+        ir_samples = self.ir_samples
 
-        def loglikelihood(n_vec: NDArray[(Any,), float]) -> float:
+        def loglikelihood_monte_carlo(n_vec: NDArray[(Any,), float]) -> float:
             n_vec = n_vec.round().astype(int)
             s_sample_size = 1000000
             s_sample = np.zeros((s_vec.size, s_sample_size))
-            for s_sample_index in range(s_sample_size):
-                ir_sample_choice = self.ir_samples[
-                    :, rng.choice(np.arange(self.ir_samples.shape[1]), size=(n_vec.sum(),))
+            for s_sample_index in tqdm_notebook(range(s_sample_size)):
+                ir_sample_choice = ir_samples[
+                    :, np.random.choice(np.arange(ir_samples.shape[1]), size=(n_vec.sum(),))
                 ]
                 s_modelled = np.zeros_like(s_vec)
                 ir_sample_index_offset = 0
@@ -242,9 +245,9 @@ class RandomizedIrStats:
                 s_sample[:, s_sample_index] = s_modelled
 
             s_sample = s_sample[L:N, :]  # cutting off edges from the sample
-            return np.log(ndepdf(s_sample, center_s_vec, bins=10, check_bin_count=True))
+            return np.log(ndepdf(s_sample, center_s_vec, bins=15, check_bin_count=True))
 
-        return loglikelihood
+        return loglikelihood_monte_carlo
 
     # MGF calculation methods
 
