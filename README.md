@@ -13,4 +13,4 @@ pip install -r requirements.txt
 
 # Описание
 
-См. [текст](`doc/build/thesis.pdf`).
+См. [текст](doc/build/thesis.pdf).
