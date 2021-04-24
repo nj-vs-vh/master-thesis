@@ -24,7 +24,7 @@ LARGE_FIGSIZE = (10, 7)
 
 def _save_or_show(filename: Optional[str]):
     if filename:
-        plt.savefig(f'./doc/pic/{filename}.pdf')
+        plt.savefig(f'../doc/pic/{filename}.pdf')
     else:
         plt.show()
 
@@ -63,6 +63,7 @@ def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float],
 
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(bottom=0)
+    ax1.set_xlim(0, N + L)
 
     _save_or_show(filename)
 
@@ -96,6 +97,9 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('$n$')
     ax.legend()
+
+    ax.set_ylim(bottom=0)
+    ax.set_xlim(0, N)
 
     _save_or_show(filename)
 
@@ -149,7 +153,7 @@ def plot_bayesian_mean_estimation(
         linewidths=[2],
     )
 
-    std_line_halfwidth = 0.4
+    std_line_halfwidth = 0.3
 
     ax.hlines(
         means - stds,
@@ -166,6 +170,7 @@ def plot_bayesian_mean_estimation(
         linewidths=[1],
     )
     ax.set_ylim(bottom=0)
+    ax.set_xlim(0, N)
 
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('n')

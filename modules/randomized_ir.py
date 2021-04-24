@@ -1,3 +1,8 @@
+"""
+randomized_ir: classes for modelling randomized impulse response and using it for statistical deconvolution
+"""
+
+
 import math
 import numpy as np
 from matplotlib import pyplot as plt
@@ -12,12 +17,11 @@ from functools import partial, lru_cache
 from numba import njit
 
 from tqdm import tqdm_notebook
-
 from typing import Union, Callable, Optional, Any
 from nptyping import NDArray
 
-import utils
-from ndepdf import ndepdf
+import modules.utils as utils
+from modules.ndepdf import ndepdf
 
 
 rng = np.random.default_rng()
@@ -163,7 +167,7 @@ class RandomizedIrStats:
     def L(self) -> int:
         return self.rir.L
 
-    def estimate_n_vec(self, s_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
+    def estimate_n_vec(self, s_vec: NDArray[(Any,), float], debug: bool = False) -> NDArray[(Any,), float]:
         """LLS-based estimation of n vector using Moore-Penrose pseudoinverse matrix.
 
         See \\subsection{Грубая оценка методом наименьших квадратов}
@@ -171,13 +175,26 @@ class RandomizedIrStats:
         L = self.L
         N = s_vec.size - L
 
-        C = np.zeros((N + L + 1, N))  # see \label{eq:mean_matrix}
+        C = np.zeros((N + L, N))  # see \label{eq:mean_matrix}
         c_vec = self.ir_sample_mean
         for i in range(N):
             C[i : i + L + 1, i] = c_vec  # noqa
 
+        if debug:
+            with np.printoptions(precision=3, suppress=True):
+                print('Mean RIR:')
+                print(c_vec)
+                print('\nBefore cutting edge effects:')
+                print(C)
+
         C = utils.slice_edge_effects(C, L, N)
         s_vec = utils.slice_edge_effects(s_vec, L, N)
+
+        if debug:
+            with np.printoptions(precision=3, suppress=True):
+                print('\nAfter cutting edge effects:')
+                print(C)
+
         return pinv(C) @ s_vec
 
     def get_loglikelihood_normdist(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
@@ -365,7 +382,7 @@ if __name__ == "__main__":
     # testing MC vs normdist loglikelihood
 
     from random import random
-    from utils import generate_poissonian_ns
+    from modules.utils import generate_poissonian_ns
 
     L_true = 3.5
     ir_x = np.linspace(0, L_true, int(L_true * 100))
@@ -385,4 +402,4 @@ if __name__ == "__main__":
     loglike = stats.get_loglikelihood_normdist(s_vec)
     loglike_mc = stats.get_loglikelihood_monte_carlo(s_vec)
     print(loglike(n_vec_estimate))
-    print(loglike_mc(n_vec_estimate))
+    # print(loglike_mc(n_vec_estimate))

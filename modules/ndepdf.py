@@ -1,15 +1,13 @@
+"""
+ndepdf: efficient calculation of empirical n-dimensional PDF used for Monte-Carlo likelihood estimation
+"""
+
 import numpy as np
 
 from collections import defaultdict
 
 from typing import Union, Any
 from nptyping import NDArray
-
-
-class NDSparse:
-    """N-dimensional sparse array using dictionary of keys"""
-
-    pass
 
 
 # for type hints
