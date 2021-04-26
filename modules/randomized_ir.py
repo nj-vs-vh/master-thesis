@@ -198,7 +198,7 @@ class RandomizedIrStats:
         return pinv(C) @ s_vec
 
     def get_loglikelihood_normdist(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
-        """Loglikelihood assuming normal distribution of S_j"""
+        """Loglikelihood function for a given signal s_vec assuming independent and normal distributions of S_j"""
 
         L = self.L
         N = s_vec.size - L
@@ -238,31 +238,43 @@ class RandomizedIrStats:
 
         return loglikelihood_normdist
 
+    def sample_S_vec(
+        self, n_vec: NDArray[(Any,), float], n_samples: int, progress: bool = False
+    ) -> NDArray[(Any, Any), float]:
+        """Generate sample of sigmal realizations for a given input n_vec"""
+        n_vec = n_vec.round().astype(int)
+        N = n_vec.size
+
+        S_length = N + self.L
+
+        n_ir_samples = self.ir_samples.shape[1]
+        s_sample = np.zeros((S_length, n_samples))
+
+        sample_indices = range(n_samples)
+        if progress:
+            sample_indices = tqdm_notebook(sample_indices)
+
+        for s_sample_index in sample_indices:
+            ir_sample_choice = self.ir_samples[:, np.random.choice(np.arange(n_ir_samples), size=(n_vec.sum(),))]
+            s_modelled = np.zeros((S_length,))
+            ir_sample_index_offset = 0
+            for i, n in enumerate(n_vec):
+                s_modelled[i : i + self.L + 1] += np.sum(  # noqa
+                    ir_sample_choice[:, ir_sample_index_offset : ir_sample_index_offset + n], axis=1  # noqa
+                )
+                ir_sample_index_offset += n
+            s_sample[:, s_sample_index] = s_modelled
+        return s_sample
+
     def get_loglikelihood_monte_carlo(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
         L = self.L
         N = s_vec.size - L
         center_s_vec = s_vec[L:N]
-        ir_samples = self.ir_samples
 
-        def loglikelihood_monte_carlo(n_vec: NDArray[(Any,), float]) -> float:
-            n_vec = n_vec.round().astype(int)
-            s_sample_size = 1000000
-            s_sample = np.zeros((s_vec.size, s_sample_size))
-            for s_sample_index in tqdm_notebook(range(s_sample_size)):
-                ir_sample_choice = ir_samples[
-                    :, np.random.choice(np.arange(ir_samples.shape[1]), size=(n_vec.sum(),))
-                ]
-                s_modelled = np.zeros_like(s_vec)
-                ir_sample_index_offset = 0
-                for i, n in enumerate(n_vec):
-                    s_modelled[i : i + L + 1] += np.sum(  # noqa
-                        ir_sample_choice[:, ir_sample_index_offset : ir_sample_index_offset + n], axis=1  # noqa
-                    )
-                    ir_sample_index_offset += n
-                s_sample[:, s_sample_index] = s_modelled
-
+        def loglikelihood_monte_carlo(n_vec: NDArray[(Any,), float], progress: bool = False) -> float:
+            s_sample = self.sample_S_vec(n_vec, 10 ** 5, progress=progress)
             s_sample = s_sample[L:N, :]  # cutting off edges from the sample
-            return np.log(ndepdf(s_sample, center_s_vec, bins=15, check_bin_count=True))
+            return np.log(ndepdf(s_sample, center_s_vec, bins=5, check_bin_count=True))
 
         return loglikelihood_monte_carlo
 
@@ -402,4 +414,4 @@ if __name__ == "__main__":
     loglike = stats.get_loglikelihood_normdist(s_vec)
     loglike_mc = stats.get_loglikelihood_monte_carlo(s_vec)
     print(loglike(n_vec_estimate))
-    # print(loglike_mc(n_vec_estimate))
+    print(loglike_mc(n_vec_estimate))

@@ -66,6 +66,12 @@ def ndepdf(
                 f"Beens seem to be very small: there's only as much as {max_points_per_bin} points per bin. "
                 + "Try lowering bins parameter"
             )
+        else:
+            median_among_nonzero = np.median(np.array(s))
+            print(
+                f"There's {max_points_per_bin} points per bin -- seems enough;"
+                + f"median is {median_among_nonzero} among nonzero bins"
+            )
     # finally, estimate PDF as a number of points from sample in the same bin relative to the sample size
     return ndhist[tuple(point_binned)] / (N_sample * cell_volume)
 
