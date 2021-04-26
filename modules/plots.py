@@ -215,17 +215,19 @@ def plot_S_j_marginal_normality_assessment(
         axes_row[0].set_ylabel(f"$\\bar{{n}} = {n_mean}$")
 
         N = S_sample.shape[0] - L
-        S_sample = S_sample[L+1:N, :]
+        S_sample = S_sample[L + 1 : N, :]  # noqa
 
         marker = normality_marker(S_sample)
         marker_i_sorted = np.argsort(marker)
         marker_i_sorted = marker_i_sorted[np.isfinite(marker[marker_i_sorted])]
         indices = marker_i_sorted[[0, len(marker_i_sorted) // 2, len(marker_i_sorted) - 1]]
 
-        for i_bin, ax, description in zip(indices, axes_row, ['Лучший', 'Медианный', 'Худший']):
+        for i_bin, ax, description_ind in zip(
+            indices, axes_row, ['best', 'median', 'worst']
+        ):
             sample = S_sample[i_bin, :]
 
-            epdf, bins, _ = ax.hist(sample, bins=100, density=True, color=Color.S.value)
+            epdf, bins, _ = ax.hist(sample, bins=30, density=True, color=Color.S.value)
             bincenters = 0.5 * (bins[1:] + bins[:-1])
             normpdf = norm.pdf(bincenters, loc=sample.mean(), scale=sample.std())
             ax.plot(bincenters, normpdf, color=Color.S_APPROX.value)
@@ -234,10 +236,8 @@ def plot_S_j_marginal_normality_assessment(
 
             ax.set_yticks([])
 
-            if i_row == 0:
-                ax.set_title(f'«{description.title()}» бин')
             if i_row == n_rows - 1:
-                ax.set_xlabel('$S_j$')
+                ax.set_xlabel(f'$S_{{{description_ind}}}$')
 
             rms_error = np.sqrt(np.mean(np.square(epdf - normpdf)))
             relative_rms_error = 100 * rms_error / np.max(epdf)
