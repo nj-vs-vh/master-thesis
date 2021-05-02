@@ -174,6 +174,8 @@ class RandomizedIrEffect:
         self.C_mat = self.calculate_C_mat()
         self.Xi_mat = self.calculate_Xi_mat()
         self.mvn_mu_Sigma_as_func_of_n_vec = self.get_mvn_mu_Sigma_from_n_vec()
+        # run njitted func once to let numba compile it (avoid skewing timing tests later!)
+        self.mvn_mu_Sigma_as_func_of_n_vec(10 * np.ones(N, dtype=float))
 
     def explore(self):
         print(f"L={self.L} and N={self.N}")
@@ -212,9 +214,9 @@ class RandomizedIrEffect:
             return np.cov(self.ir_samples[[lag, lag + Delta], :])[0, 1]
 
         L = self.L
-        Xi_mat = np.zeros((L+1, L+1))
-        for i in range(L+1):
-            for j in range(i, L+1):
+        Xi_mat = np.zeros((L + 1, L + 1))
+        for i in range(L + 1):
+            for j in range(i, L + 1):
                 Xi_mat[i, j] = xi(L - j, i)
 
         return Xi_mat
@@ -235,7 +237,7 @@ class RandomizedIrEffect:
 
         # extracting it as njitted function
         @njit
-        def mu_Sigma(n_vec):
+        def mu_Sigma(n_vec: NDArray[(Any,), float]):
             # mean vector calculation
             mu = C_mat @ n_vec
             # covariance matrix calculation
@@ -243,12 +245,13 @@ class RandomizedIrEffect:
             for i_cut in range(N - L):
                 i = i_cut + L + 1
                 # see \\ref{eq:Xi-matrix-for-Sigma-calculation}
-                Sigma_i_vec = Xi_mat @ n_vec[i_cut : i]  # noqa
+                Sigma_i_vec = Xi_mat @ n_vec[i_cut:i]  # noqa
                 # cutting end of Sigma_i vec when adding it at the end of the matrix (no effect on the inside-region)
-                Sigma_i_vec = Sigma_i_vec[:N - L - i_cut]
+                Sigma_i_vec = Sigma_i_vec[: N - L - i_cut]
                 Sigma[i_cut, i_cut:i] = Sigma_i_vec
                 Sigma[i_cut:i, i_cut] = Sigma_i_vec
             return mu, Sigma
+
         return mu_Sigma
 
     def get_multivariate_normal_S_vec(self, n_vec: NDArray[(Any,), float]):
@@ -305,6 +308,65 @@ class RandomizedIrEffect:
             return np.log(ndepdf(s_sample, center_s_vec, bins=5, check_bin_count=True))
 
         return loglikelihood_monte_carlo
+
+    def get_loglikelihood_uncorrelated_mvn(
+        self, s_vec: NDArray[(Any,), float]
+    ) -> Callable[[NDArray[(Any,), float]], float]:
+        """Like get_loglikelihood_mvn, but all correlations between S_vec items are forced to 0.
+
+        Emulates old behavior of fast normdist likelihood function"""
+        s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
+
+        def loglikelihood_mvn(n_vec: NDArray[(Any,), float]) -> float:
+            if np.any(n_vec < 0):  # guard for impossible values
+                return -np.inf
+            mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
+            sigmas = np.diagonal(Sigma)
+            Sigma = np.diagflat(sigmas)
+            rv = multivariate_normal(mean=mu, cov=Sigma)
+            return rv.logpdf(s_vec)
+
+        return loglikelihood_mvn
+
+    def get_loglikelihood_independent_normdist(
+        self, s_vec: NDArray[(Any,), float]
+    ) -> Callable[[NDArray[(Any,), float]], float]:
+        """Like get_loglikelihood_uncorrelated_mvn, but with verbatim calculations and njitted efficient function"""
+
+        L = self.L
+        N = s_vec.size - L
+        # for nested function to be numbifiable
+        ir_sample_mean = self.ir_sample_mean
+        ir_sample_D = self.ir_sample_D
+
+        @njit
+        def loglikelihood_normdist(n_vec: NDArray[(Any,), float]) -> float:
+            if np.any(n_vec < 0):  # guard for impossible values
+                return -np.inf
+            logL = 0
+            for j, s_j in enumerate(s_vec):
+                j += 1  # from indexing array (0-based) to indexing time points (1-based)
+                if j <= L or j > N:  # cutting off signal edges
+                    continue
+                Es_j = 0
+                Ds_j = 0
+                for lag in range(L + 1):
+                    i = j - lag
+                    i -= 1  # from indexing bins (1-based) to indexing array (0-based)
+                    Es_j += n_vec[i] * ir_sample_mean[lag]
+                    Ds_j += n_vec[i] * ir_sample_D[lag]
+                Sigma_s_j = np.sqrt(Ds_j)
+                logL_addition = (
+                    -0.918938533205  # log(sqrt(2 pi))
+                    - np.log(Sigma_s_j)
+                    - ((s_j - Es_j) / (1.41421356237 * Sigma_s_j)) ** 2
+                )
+                if np.isnan(logL_addition):
+                    return -np.inf
+                logL += logL_addition
+            return logL
+
+        return loglikelihood_normdist
 
     # MGF calculation methods
 

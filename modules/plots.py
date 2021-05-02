@@ -18,6 +18,7 @@ TIME_LABEL = 'Время, бины'
 
 
 class Figsize(Enum):
+    SMALL = (4, 4)
     NORMAL = (7, 5)
     TRIPANEL = (7, 2)
 
@@ -34,6 +35,23 @@ def _save_or_show(filename: Optional[str]):
         plt.savefig(f'../doc/pic/{filename}.pdf')
     else:
         plt.show()
+
+
+def plot_data_similarity_test(data_x, data_y, label_1, label_2):
+    """For comparison of presumably similar datasets with scatterplot"""
+    fig, ax = plt.subplots(figsize=Figsize.SMALL.value)
+
+    min_ = min(data_x.min(), data_y.min())
+    max_ = min(data_x.max(), data_y.max())
+    range_ = np.linspace(min_, max_)
+
+    ax.scatter(data_x, data_y, c='k', marker='.')
+    ax.plot(range_, range_, 'r-')
+
+    ax.set_xlabel(label_1)
+    ax.set_ylabel(label_2)
+
+    return fig, ax
 
 
 def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float], filename=None):
