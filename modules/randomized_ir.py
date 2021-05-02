@@ -302,7 +302,7 @@ class RandomizedIrEffect:
         def loglikelihood_monte_carlo(n_vec: NDArray[(Any,), float], progress: bool = False) -> float:
             s_sample = self.sample_S_vec(n_vec, 10 ** 6, progress=progress)
             s_sample = utils.slice_edge_effects(s_sample, L, N)
-            return np.log(ndepdf(s_sample, center_s_vec, bins=4, check_bin_count=True))
+            return np.log(ndepdf(s_sample, center_s_vec, bins=5, check_bin_count=True))
 
         return loglikelihood_monte_carlo
 
