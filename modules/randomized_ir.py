@@ -8,13 +8,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 import numdifftools as nd
 
+from numba import njit
+
 from scipy.interpolate import interp1d
 from numpy.linalg import pinv
 from math import pi
 
-from functools import partial, lru_cache
+from scipy.stats import multivariate_normal
 
-from numba import njit
+from functools import partial, lru_cache
 
 from tqdm import tqdm_notebook
 from typing import Union, Callable, Optional, Any
@@ -54,7 +56,11 @@ class RandomizedIr:
         if self.ir_x[1] - self.ir_x[0] >= 1:
             raise ValueError("ir_x seem too spread out, haven't you forgot to set binsize?")
 
-        self.L = math.floor(ir_x[-1])
+        L_true = ir_x[-1]  # \tilde{L} in text
+        self.L = math.floor(L_true)
+        # when L_true is very close to an integer we can drop L by 1, e.g L_true = 5.0 is the same as L_true = 4.9999
+        if L_true - self.L < 1e-6:
+            self.L -= 1
 
         self.base_ir_generator: Callable[[], NDArray] = ir_y if callable(ir_y) else lambda: ir_y
         ir_y_realization = self.base_ir_generator()
@@ -133,21 +139,24 @@ class RandomizedIr:
         return out_y
 
 
-class RandomizedIrStats:
+class RandomizedIrEffect:
     def __init__(
         self,
         rir: RandomizedIr,
+        N: int,
         samplesize: int = 100000,
         inbin_invcdf: Callable[[float], float] = None,
     ):
-        """Calculate and store statistical representation of randomized IR
+        """Statistical representation of a RandomizedIr's effect in linear system.
 
         Args:
-            rir (RandomizedIr): RandIR for calculation
-            samplesize (int, optional): amount of sample delta functions for each IR bin. Defaults to 100000.
+            rir (RandomizedIr): RandomizedIr for calculation.
+            N (int): Number of bins we're operating in.
+            samplesize (int, optional): Amount of sample functions for each IR bin. Defaults to 100000.
             inbin_invcdf (Callable[[float], float], optional): See RanodmizedIr's convolve_with_deltas method.
         """
         self.rir = rir
+        self.N = N
         sample_t = range(self.L + 1)
         self.ir_samples = np.zeros((self.L + 1, samplesize))
 
@@ -162,81 +171,100 @@ class RandomizedIrStats:
         # means and dispersions of C(1, l)
         self.ir_sample_mean = np.mean(self.ir_samples, axis=1)
         self.ir_sample_D = np.power(np.std(self.ir_samples, axis=1), 2)
+        self.C_mat = self.calculate_C_mat()
+        self.Xi_mat = self.calculate_Xi_mat()
+        self.mvn_mu_Sigma_as_func_of_n_vec = self.get_mvn_mu_Sigma_from_n_vec()
+
+    def explore(self):
+        print(f"L={self.L} and N={self.N}")
+        print("RIR effects from photon in the bin #1 (t in [0; 1]):")
+        print("t\teffect")
+        for i, (mean, dispersion) in enumerate(zip(self.ir_sample_mean, self.ir_sample_D)):
+            print(f"{i + 1}\t{mean:.2f} +/- {np.sqrt(dispersion):.2f}")
+        print()
+        print(f"C matrix used to calculate mean-vector for a given n vector (with cut edge effects):\n{self.C_mat}")
+        print()
+        print(f"Xi matrix used to calculate covariance matrix for a given n vector:\n{self.Xi_mat}")
 
     @property
     def L(self) -> int:
         return self.rir.L
 
-    def estimate_n_vec(self, s_vec: NDArray[(Any,), float], debug: bool = False) -> NDArray[(Any,), float]:
+    def calculate_C_mat(self) -> NDArray[(Any, Any), float]:
+        """Matrix C used to calculate mean-vector for a given \\vec{n}
+
+        See \\ref{eq:mean-vector-calculation}"""
+        L = self.L
+        N = self.N
+        c_vec = self.ir_sample_mean
+        C = np.zeros((N + L, N))
+        for i in range(N):
+            C[i : i + L + 1, i] = c_vec  # noqa
+        return utils.slice_edge_effects(C, L, N)
+
+    def calculate_Xi_mat(self) -> NDArray[(Any, Any), float]:
+        """Matrix used to calculate covariance matrix for a given \\vec{n}
+
+        See \\ref{eq:Xi-matrix-for-Sigma-calculation}"""
+
+        def xi(lag, Delta):
+            # np.cov returns covariation _matrix_, but we need only cov(x, y) which is at [0, 1] and [1, 0] cells
+            return np.cov(self.ir_samples[[lag, lag + Delta], :])[0, 1]
+
+        L = self.L
+        Xi_mat = np.zeros((L+1, L+1))
+        for i in range(L+1):
+            for j in range(i, L+1):
+                Xi_mat[i, j] = xi(L - j, i)
+
+        return Xi_mat
+
+    def estimate_n_vec(self, s_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
         """LLS-based estimation of n vector using Moore-Penrose pseudoinverse matrix.
 
         See \\subsection{Грубая оценка методом наименьших квадратов}
         """
+        s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
+        return pinv(self.C_mat) @ s_vec
+
+    def get_mvn_mu_Sigma_from_n_vec(self):
         L = self.L
-        N = s_vec.size - L
+        N = self.N
+        C_mat = self.C_mat
+        Xi_mat = self.Xi_mat
 
-        C = np.zeros((N + L, N))  # see \label{eq:mean_matrix}
-        c_vec = self.ir_sample_mean
-        for i in range(N):
-            C[i : i + L + 1, i] = c_vec  # noqa
-
-        if debug:
-            with np.printoptions(precision=3, suppress=True):
-                print('Mean RIR:')
-                print(c_vec)
-                print('\nBefore cutting edge effects:')
-                print(C)
-
-        C = utils.slice_edge_effects(C, L, N)
-        s_vec = utils.slice_edge_effects(s_vec, L, N)
-
-        if debug:
-            with np.printoptions(precision=3, suppress=True):
-                print('\nAfter cutting edge effects:')
-                print(C)
-
-        return pinv(C) @ s_vec
-
-    def get_loglikelihood_normdist(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
-        """Loglikelihood function for a given signal s_vec assuming independent and normal distributions of S_j"""
-
-        L = self.L
-        N = s_vec.size - L
-        # for nested function to be numbifiable
-        ir_sample_mean = self.ir_sample_mean
-        ir_sample_D = self.ir_sample_D
-
-        def propto_logpdf(x: float, mu: float, sigma: float) -> float:
-            return -(((x - mu) / (1.41421356237 * sigma)) ** 2)
-
+        # extracting it as njitted function
         @njit
-        def loglikelihood_normdist(n_vec: NDArray[(Any,), float]) -> float:
+        def mu_Sigma(n_vec):
+            # mean vector calculation
+            mu = C_mat @ n_vec
+            # covariance matrix calculation
+            Sigma = np.zeros((N - L, N - L))
+            for i_cut in range(N - L):
+                i = i_cut + L + 1
+                # see \\ref{eq:Xi-matrix-for-Sigma-calculation}
+                Sigma_i_vec = Xi_mat @ n_vec[i_cut : i]  # noqa
+                # cutting end of Sigma_i vec when adding it at the end of the matrix (no effect on the inside-region)
+                Sigma_i_vec = Sigma_i_vec[:N - L - i_cut]
+                Sigma[i_cut, i_cut:i] = Sigma_i_vec
+                Sigma[i_cut:i, i_cut] = Sigma_i_vec
+            return mu, Sigma
+        return mu_Sigma
+
+    def get_multivariate_normal_S_vec(self, n_vec: NDArray[(Any,), float]):
+        mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
+        return multivariate_normal(mean=mu, cov=Sigma)
+
+    def get_loglikelihood_mvn(self, s_vec: NDArray[(Any,), float]) -> Callable[[NDArray[(Any,), float]], float]:
+        """Loglikelihood function for a given signal s_vec assuming independent and normal distributions of S_j"""
+        s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
+
+        def loglikelihood_mvn(n_vec: NDArray[(Any,), float]) -> float:
             if np.any(n_vec < 0):  # guard for impossible values
                 return -np.inf
-            logL = 0
-            for j, s_j in enumerate(s_vec):
-                j += 1  # from indexing array (0-based) to indexing time points (1-based)
-                if j <= L or j > N:  # cutting off signal edges
-                    continue
-                Es_j = 0
-                Ds_j = 0
-                for lag in range(L + 1):
-                    i = j - lag
-                    i -= 1  # from indexing bins (1-based) to indexing array (0-based)
-                    Es_j += n_vec[i] * ir_sample_mean[lag]
-                    Ds_j += n_vec[i] * ir_sample_D[lag]
-                Sigma_s_j = np.sqrt(Ds_j)
-                logL_addition = (
-                    -0.918938533205  # log(sqrt(2 pi))
-                    - np.log(Sigma_s_j)
-                    - ((s_j - Es_j) / (1.41421356237 * Sigma_s_j)) ** 2
-                )
-                if np.isnan(logL_addition):
-                    return -np.inf
-                logL += logL_addition
-            return logL
+            return self.get_multivariate_normal_S_vec(n_vec).logpdf(s_vec)
 
-        return loglikelihood_normdist
+        return loglikelihood_mvn
 
     def sample_S_vec(
         self, n_vec: NDArray[(Any,), float], n_samples: int, progress: bool = False
@@ -272,9 +300,9 @@ class RandomizedIrStats:
         center_s_vec = s_vec[L:N]
 
         def loglikelihood_monte_carlo(n_vec: NDArray[(Any,), float], progress: bool = False) -> float:
-            s_sample = self.sample_S_vec(n_vec, 10 ** 5, progress=progress)
-            s_sample = s_sample[L:N, :]  # cutting off edges from the sample
-            return np.log(ndepdf(s_sample, center_s_vec, bins=5, check_bin_count=True))
+            s_sample = self.sample_S_vec(n_vec, 10 ** 6, progress=progress)
+            s_sample = utils.slice_edge_effects(s_sample, L, N)
+            return np.log(ndepdf(s_sample, center_s_vec, bins=4, check_bin_count=True))
 
         return loglikelihood_monte_carlo
 
@@ -300,20 +328,11 @@ class RandomizedIrStats:
         if abs(t) < MGF_EPSILON:
             return 1
         else:
-            return np.mean(np.exp(t * self.ir_samples[lag - 1, :]))
+            return np.mean(np.exp(t * self.ir_samples[lag, :]))
 
     @lru_cache(maxsize=100000)
     def mgf_moment(self, i: int, n: int, lag: int) -> float:
-        """Compute ith moment of C(n, lag) using MGF
-
-        Args:
-            i (int): [description]
-            n (int): [description]
-            lag (int): [description]
-
-        Returns:
-            float: [description]
-        """
+        """Compute ith moment of C(n, lag) using MGF"""
 
         derivative = nd.Derivative(partial(self.mgf, n=n, lag=lag), n=i, full_output=True)
         moment, info = derivative(0)
@@ -322,11 +341,10 @@ class RandomizedIrStats:
     # diagnostic plots
 
     def plot_samples(self, max_lag: int = None):
-        if not max_lag:
-            max_lag = self.ir_samples.shape[0] + 1
+        if max_lag is None:
+            max_lag = self.ir_samples.shape[0]
         fig, ax = plt.subplots(figsize=(8, 7))
-        for lag_0_based, sample in enumerate(self.ir_samples):
-            lag = lag_0_based + 1
+        for lag, sample in enumerate(self.ir_samples):
             if lag > max_lag:
                 break
             _, _, histogram = ax.hist(sample, label=f"lag={lag}", alpha=0.3, density=True)
@@ -337,13 +355,13 @@ class RandomizedIrStats:
             ax.plot(pdf_t, pdf, color=histogram[0]._facecolor, alpha=1)
 
         ax.legend()
-        ax.set_yscale('log')
+        # ax.set_yscale('log')
         plt.show()
 
     def plot_moments(self, n: int, lag: int):
         fig, ax = plt.subplots(figsize=(8, 7))
 
-        sample_1 = self.ir_samples[lag - 1, :]
+        sample_1 = self.ir_samples[lag, :]
         sample_n = np.zeros_like(sample_1)
         for _ in range(n):
             sample_n += rng.permutation(sample_1)
@@ -407,11 +425,11 @@ if __name__ == "__main__":
 
     s_vec = rir.convolve_with_n_vec(n_vec)
 
-    stats = RandomizedIrStats(rir, samplesize=10 ** 5)
+    stats = RandomizedIrEffect(rir, samplesize=10 ** 5)
 
     n_vec_estimate = stats.estimate_n_vec(s_vec)
 
-    loglike = stats.get_loglikelihood_normdist(s_vec)
+    loglike = stats.get_loglikelihood_mvn(s_vec)
     loglike_mc = stats.get_loglikelihood_monte_carlo(s_vec)
     print(loglike(n_vec_estimate))
     print(loglike_mc(n_vec_estimate))

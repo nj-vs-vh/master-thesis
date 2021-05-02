@@ -20,7 +20,8 @@ class SamplingConfig:
     n_samples = 10 ** 3
     starting_points_strategy = 'around_estimation'  # 'around_estimation' or 'prior', see Foreman-Mackey et al. (2013)
     moves = [  # see https://emcee.readthedocs.io/en/stable/user/moves/#moves-user
-        (emcee.moves.DEMove(), 1),
+        (emcee.moves.StretchMove(), 1),
+        # (emcee.moves.DEMove(), 1),
         # (emcee.moves.DESnookerMove(), 1),
         # (emcee.moves.KDEMove(), 1),  # BAD -- low acceptance, very slow
     ]
@@ -60,7 +61,7 @@ def get_posterior_sample(
     # see for details: https://emcee.readthedocs.io/en/stable/tutorials/autocorr/#autocorr
     autocorr_is_good_if_less_than = 1 / 100  # fraction of number of samples drawn
 
-    autocorr_estimation_each = 100
+    autocorr_estimation_each = 10
     samples_count = []
     autocorr_estimates = []
     # prev_tau = np.inf  # for relative tau drift
@@ -117,7 +118,7 @@ def starting_points_from_estimation(
 if __name__ == "__main__":
 
     from random import random
-    from modules.randomized_ir import RandomizedIr, RandomizedIrStats
+    from modules.randomized_ir import RandomizedIr, RandomizedIrEffect
 
     L_true = 3.5
     ir_x = np.linspace(0, L_true, int(L_true * 100))
@@ -130,8 +131,8 @@ if __name__ == "__main__":
 
     s_vec = rir.convolve_with_n_vec(n_vec)
 
-    stats = RandomizedIrStats(rir, samplesize=10 ** 5)
+    stats = RandomizedIrEffect(rir, samplesize=10 ** 5)
     n_vec_estimation = stats.estimate_n_vec(s_vec)
-    loglike = stats.get_loglikelihood_normdist(s_vec)
+    loglike = stats.get_loglikelihood_mvn(s_vec)
 
     get_posterior_sample(loglike, n_vec_estimation, stats.L)

@@ -69,7 +69,7 @@ def ndepdf(
         else:
             median_among_nonzero = np.median(np.array(s))
             print(
-                f"There's {max_points_per_bin} points per bin -- seems enough;"
+                f"There's {max_points_per_bin} points per bin -- seems enough; "
                 + f"median is {median_among_nonzero} among nonzero bins"
             )
     # finally, estimate PDF as a number of points from sample in the same bin relative to the sample size

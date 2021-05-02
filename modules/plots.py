@@ -85,19 +85,19 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
     ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=Color.N.value, label='$\\vec{n}$')
 
     ax.hlines(
-        n_vec_estimation[:L],
-        bin_indices[:L],
-        bin_indices[:L] + 1,
+        *[
+            np.concatenate((vec[:L], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)
+        ],
         colors=[Color.N_ESTIMATION.value],
-        linewidths=[2],
+        linewidths=[1],
         linestyles=['dotted'],
     )
     ax.hlines(
-        n_vec_estimation[L:],
-        bin_indices[L:],
-        bin_indices[L:] + 1,
+        *[
+            vec[L:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)
+        ],
         colors=[Color.N_ESTIMATION.value],
-        linewidths=[2],
+        linewidths=[3],
         label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
     )
 

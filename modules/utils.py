@@ -16,19 +16,12 @@ def generate_poissonian_ns(n_mean: Real, count: int) -> NDArray[Real]:
 
 def slice_edge_effects(mat: NDArray[(Any,), float], L: int, N: int, axis: int = 0):
     """See \\ref{sec:edge-effects}"""
-    # t in [L + 1, N]; accounting for zero-based indexing of one-based time
-    start_i, end_i = L, N - 1
-    # and for the fact the slice does not include last point!
-    end_i += 1
-
-    # WTF?
-    start_i -= 1
-
-    return np.take(mat, range(start_i, end_i), axis=axis)
+    # t (one-based) in L+1, ..., N => index (zero-based) in L, ..., N-1
+    return np.take(mat, range(L, N), axis=axis)
 
 
 def timer(args_formatter=None):
-    if not args_formatter:
+    if args_formatter is None:
         args_formatter = (
             lambda *args, **kwargs: (
                 ", ".join(
