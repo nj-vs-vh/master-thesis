@@ -6,8 +6,12 @@ import numpy as np
 import emcee
 from multiprocessing import Pool
 
-from typing import Any, Callable
+from dataclasses import dataclass, field
+
+from typing import Any, Callable, List, Tuple, Optional
 from nptyping import NDArray
+from emcee.moves import Move
+from emcee.ensemble import EnsembleSampler
 
 from modules.utils import generate_poissonian_ns, slice_edge_effects
 
@@ -15,23 +19,40 @@ from modules.utils import generate_poissonian_ns, slice_edge_effects
 rng = np.random.default_rng()
 
 
+@dataclass
 class SamplingConfig:
-    multiprocessing = False
-    n_samples = 10 ** 3
-    starting_points_strategy = 'around_estimation'  # 'around_estimation' or 'prior', see Foreman-Mackey et al. (2013)
-    moves = [  # see https://emcee.readthedocs.io/en/stable/user/moves/#moves-user
-        (emcee.moves.StretchMove(), 1),
-        # (emcee.moves.DEMove(), 1),
-        # (emcee.moves.DESnookerMove(), 1),
-        # (emcee.moves.KDEMove(), 1),  # BAD -- low acceptance, very slow
-    ]
+    n_walkers: int = 512
+    n_samples: int = 5000
+    # 'given', 'around_estimation' or 'prior', see Foreman-Mackey et al. (2013)
+    # if 'given', n_vec_estimation must be a (n_walkers, N) matrix with ready-to use starting points
+    starting_points_strategy: str = 'around_estimation'
+    # see https://emcee.readthedocs.io/en/stable/user/moves/#moves-user
+    moves: List[Tuple[Move, float]] = field(
+        default_factory=lambda: [
+            (emcee.moves.StretchMove(), 1.0),
+            # (emcee.moves.DEMove(), 1.0),
+            # (emcee.moves.DESnookerMove(), 1.0),
+            # (emcee.moves.KDEMove(), 1.0),  # BAD -- low acceptance, very slow
+        ]
+    )
+    multiprocessing: bool = False
+    autocorr_estimation_each: Optional[int] = None  # None to avoid estimation
+    debug_acceptance_fraction_each: Optional[int] = None  # None to not debug
+    progress_bar: bool = False
 
 
-def get_posterior_sample(
+@dataclass
+class SamplingResult:
+    sampler: EnsembleSampler
+    sample: Optional[NDArray] = None
+    N_tau: Optional[Tuple[NDArray, NDArray]] = None
+
+
+def run_mcmc(
     logposterior: Callable[[NDArray[(Any,), float]], float],
     n_vec_estimation: NDArray[(Any,), float],
     L: int,
-    progress: bool = False,
+    config: SamplingConfig,
 ) -> NDArray[(Any, Any), float]:
     """High-level routine to sample posterior probability, automatically estimating burn-in and thinning
 
@@ -40,57 +61,62 @@ def get_posterior_sample(
         n_vec_estimation (NDArray[(Any,), float]): initial guess for n_vec (= model params)
         progress (bool): flag to print progress bar while sampling, default is False
     """
-    n_walkers = 2048
     N = n_vec_estimation.size
 
     starting_points = starting_points_from_estimation(
-        n_vec_estimation, n_walkers, SamplingConfig.starting_points_strategy
+        n_vec_estimation, config.n_walkers, config.starting_points_strategy
     )
 
-    pool = Pool() if SamplingConfig.multiprocessing else None
+    pool = Pool() if config.multiprocessing else None
 
-    sampler = emcee.EnsembleSampler(
-        n_walkers,
-        N,
-        logposterior,
-        moves=SamplingConfig.moves,
-        pool=pool,
+    try:
+        sampler = emcee.EnsembleSampler(
+            config.n_walkers,
+            N,
+            logposterior,
+            moves=config.moves,
+            pool=pool,
+        )
+
+        # roughly estimates target sampling error of each parameter (n in bin)
+        # see for details: https://emcee.readthedocs.io/en/stable/tutorials/autocorr/#autocorr
+        autocorr_is_good_if_less_than = 1 / 100  # fraction of number of samples drawn
+
+        autocorr_estimated_at = []
+        autocorr_estimates = []
+        # prev_tau = np.inf  # for relative tau drift
+        for sample in sampler.sample(starting_points, iterations=config.n_samples, progress=config.progress_bar):
+            if (
+                config.debug_acceptance_fraction_each is not None
+                and sampler.iteration % config.debug_acceptance_fraction_each == 0
+            ):
+                print('\n Current acc. frac.:' + str(np.median(sampler.acceptance_fraction)))
+
+            if config.autocorr_estimation_each is None or sampler.iteration % config.autocorr_estimation_each != 0:
+                continue
+
+            tau = sampler.get_autocorr_time(tol=0)
+            tau = slice_edge_effects(tau, L, N)
+
+            autocorr_estimates.append(np.mean(tau))
+            autocorr_estimated_at.append(sampler.iteration)
+            if (
+                np.all(tau < autocorr_is_good_if_less_than * sampler.iteration)
+                # & np.all(np.abs(prev_tau - tau) / tau < 0.01)
+            ):
+                break
+            # prev_tau = tau
+
+        sample = sampler.get_chain(flat=True)
+    finally:
+        if config.multiprocessing:
+            pool.close()
+
+    return SamplingResult(
+        sampler=sampler,
+        sample=sample,
+        N_tau=(autocorr_estimated_at, autocorr_estimates) if config.autocorr_estimation_each is not None else None,
     )
-
-    # roughly estimates target sampling error of each parameter (n in bin)
-    # see for details: https://emcee.readthedocs.io/en/stable/tutorials/autocorr/#autocorr
-    autocorr_is_good_if_less_than = 1 / 100  # fraction of number of samples drawn
-
-    autocorr_estimation_each = 10
-    samples_count = []
-    autocorr_estimates = []
-    # prev_tau = np.inf  # for relative tau drift
-    for sample in sampler.sample(starting_points, iterations=SamplingConfig.n_samples, progress=progress):
-        if sampler.iteration % autocorr_estimation_each:
-            continue
-
-        tau = sampler.get_autocorr_time(tol=0)
-
-        tau = slice_edge_effects(tau, L, N)
-
-        print(np.median(sampler.acceptance_fraction))
-
-        autocorr_estimates.append(np.mean(tau))
-        samples_count.append(sampler.iteration)
-
-        if (
-            np.all(tau < autocorr_is_good_if_less_than * sampler.iteration)
-            # & np.all(np.abs(prev_tau - tau) / tau < 0.01)
-        ):
-            break
-        # prev_tau = tau
-
-    samples = sampler.get_chain(flat=True)
-
-    if SamplingConfig.multiprocessing:
-        pool.close()
-
-    return samples_count, autocorr_estimates, samples
 
 
 def starting_points_from_estimation(
@@ -115,6 +141,21 @@ def starting_points_from_estimation(
     return starting_points
 
 
+def extract_independent_sample(sampler: EnsembleSampler):
+    tau = sampler.get_autocorr_time(quiet=True)
+
+    burnin = int(2 * np.max(tau))
+    thin = int(0.5 * np.min(tau))
+
+    min_number_of_burnins_in_chain = 3
+    if min_number_of_burnins_in_chain * burnin > sampler.iteration:
+        raise ValueError(
+            f"Chain seems too short! Length is {sampler.iteration}, but must be at least "
+            + f"{min_number_of_burnins_in_chain}x longer than burn in time ({burnin:.2f})"
+        )
+    return sampler.get_chain(discard=burnin, thin=thin, flat=True)
+
+
 if __name__ == "__main__":
 
     from random import random
@@ -131,8 +172,21 @@ if __name__ == "__main__":
 
     s_vec = rir.convolve_with_n_vec(n_vec)
 
-    stats = RandomizedIrEffect(rir, samplesize=10 ** 5)
-    n_vec_estimation = stats.estimate_n_vec(s_vec)
-    loglike = stats.get_loglikelihood_mvn(s_vec)
+    rireff = RandomizedIrEffect(rir, N, samplesize=10 ** 4)
+    n_vec_estimation = rireff.estimate_n_vec(s_vec)
+    loglike = rireff.get_loglikelihood_mvn(s_vec)
 
-    get_posterior_sample(loglike, n_vec_estimation, stats.L)
+    result = run_mcmc(
+        loglike,
+        n_vec_estimation,
+        rireff.L,
+        SamplingConfig(
+            n_samples=1000,
+            n_walkers=128,
+            starting_points_strategy='around_estimation',
+            progress_bar=True,
+            autocorr_estimation_each=10,
+        ),
+    )
+
+    print(result)

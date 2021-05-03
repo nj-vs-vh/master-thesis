@@ -3,6 +3,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import corner
 
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
+
 from scipy.stats import norm
 
 from enum import Enum
@@ -28,6 +31,10 @@ class Color(Enum):
     S = '#DC6904'
     N_ESTIMATION = '#e33b65'
     S_APPROX = '#db040b'
+
+    def as_rgb(self):
+        hex_color = self.value.lstrip('#')
+        return [int(hex_color[i : i + 2], 16) / 256 for i in (0, 2, 4)]  # noqa
 
 
 def _save_or_show(filename: Optional[str]):
@@ -103,17 +110,13 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
     ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=Color.N.value, label='$\\vec{n}$')
 
     ax.hlines(
-        *[
-            np.concatenate((vec[:L], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)
-        ],
+        *[np.concatenate((vec[:L], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
         colors=[Color.N_ESTIMATION.value],
         linewidths=[1],
         linestyles=['dotted'],
     )
     ax.hlines(
-        *[
-            vec[L:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)
-        ],
+        *[vec[L:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
         colors=[Color.N_ESTIMATION.value],
         linewidths=[3],
         label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
@@ -164,46 +167,58 @@ def plot_bayesian_mean_estimation(
     fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
 
     bin_centers = np.arange(N) + 0.5
-    means = np.mean(sample, axis=0)
-    stds = np.std(sample, axis=0)
 
-    ax.bar(bin_centers, n_vec, width=0.9, color=Color.N.value, label='$\\vec{n}$')
+    N_BARS_ALPHA = 0.3
 
-    # cutting edges with low quality poserior
-    bin_centers = bin_centers[L + 1 : -L]  # noqa
-    means = means[L + 1 : -L]  # noqa
-    stds = stds[L + 1 : -L]  # noqa
-    ax.hlines(
-        means,
-        bin_centers - 0.5,
-        bin_centers + 0.5,
-        colors=[Color.N_ESTIMATION.value],
-        linewidths=[2],
+    ax.bar(
+        bin_centers,
+        n_vec,
+        width=0.7,
+        color=[*Color.N.as_rgb(), N_BARS_ALPHA],
+        edgecolor=Color.N.value,
+        linewidth=2,
     )
 
-    std_line_halfwidth = 0.3
+    est_color_rgb = Color.N_ESTIMATION.as_rgb()
 
-    ax.hlines(
-        means - stds,
-        bin_centers - std_line_halfwidth,
-        bin_centers + std_line_halfwidth,
-        colors=[Color.N_ESTIMATION.value],
-        linewidths=[1],
+    bin_hists_cm = ListedColormap(
+        colors=np.array(
+            [[*est_color_rgb, alpha] for alpha in np.linspace(0, 1, 100)],
+        ),
+        name='N_estimation_alhamap',
     )
-    ax.hlines(
-        means + stds,
-        bin_centers - std_line_halfwidth,
-        bin_centers + std_line_halfwidth,
-        colors=[Color.N_ESTIMATION.value],
-        linewidths=[1],
-    )
+
+    for i_bin, sample_in_bin in enumerate(sample.T):
+        if i_bin <= L or i_bin > N - L:
+            continue
+        hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=30, density=True)
+        pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
+        pcm_X = np.array([i_bin, i_bin + 1])
+        pcm_C = np.tile(hist_in_bin, (2, 1)).T
+        ax.pcolormesh(
+            pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors='', cmap=bin_hists_cm, antialiased=True
+        )
+
     ax.set_ylim(bottom=0)
     ax.set_xlim(0, N)
 
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('n')
 
-    ax.legend()
+    ax.legend(
+        handles=[
+            Patch(
+                facecolor=[*Color.N.as_rgb(), N_BARS_ALPHA],
+                edgecolor=Color.N.value,
+                linewidth=2,
+                label='$\\vec{n}$',
+            ),
+            Patch(
+                facecolor=bin_hists_cm(0.75),
+                label='$\\vec{{n}}$ bayesian estimation',
+            ),
+        ]
+    )
 
     _save_or_show(filename)
     return fig, ax
@@ -240,9 +255,7 @@ def plot_S_j_marginal_normality_assessment(
         marker_i_sorted = marker_i_sorted[np.isfinite(marker[marker_i_sorted])]
         indices = marker_i_sorted[[0, len(marker_i_sorted) // 2, len(marker_i_sorted) - 1]]
 
-        for i_bin, ax, description_ind in zip(
-            indices, axes_row, ['best', 'median', 'worst']
-        ):
+        for i_bin, ax, description_ind in zip(indices, axes_row, ['best', 'median', 'worst']):
             sample = S_sample[i_bin, :]
 
             epdf, bins, _ = ax.hist(sample, bins=30, density=True, color=Color.S.value)
