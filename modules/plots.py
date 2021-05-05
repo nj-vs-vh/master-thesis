@@ -29,7 +29,8 @@ class Figsize(Enum):
 class Color(Enum):
     N = '#0477DC'
     S = '#DC6904'
-    N_ESTIMATION = '#e33b65'
+    N_ESTIMATION = '#f2003d'
+    N_INFERRED = '#00a80b'
     S_APPROX = '#db040b'
 
     def as_rgb(self):
@@ -101,6 +102,25 @@ def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float],
     return fig, [ax1, ax2]
 
 
+def _plot_n_estimation(ax: plt.Axes, n_vec_estimation: NDArray[(Any,), int], L: int):
+    N = n_vec_estimation.size
+    bin_indices = np.arange(N)
+
+    ax.hlines(
+        *[np.concatenate((vec[:L+1], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
+        colors=[Color.N_ESTIMATION.value],
+        linewidths=[2],
+        linestyles=['dotted'],
+    )
+    est_hlines = ax.hlines(
+        *[vec[L+1:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
+        colors=[Color.N_ESTIMATION.value],
+        linewidths=[3],
+        label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
+    )
+    return est_hlines
+
+
 def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArray[(Any,), int], L: int, filename=None):
     N = n_vec.size
 
@@ -109,26 +129,13 @@ def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArra
     bin_indices = np.arange(N)
     ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=Color.N.value, label='$\\vec{n}$')
 
-    ax.hlines(
-        *[np.concatenate((vec[:L], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
-        colors=[Color.N_ESTIMATION.value],
-        linewidths=[1],
-        linestyles=['dotted'],
-    )
-    ax.hlines(
-        *[vec[L:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
-        colors=[Color.N_ESTIMATION.value],
-        linewidths=[3],
-        label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
-    )
+    _plot_n_estimation(ax, n_vec_estimation, L)
 
-    ax.set_ylim(bottom=0)
+    ax.set_ylim(bottom=0, top=np.maximum(n_vec, n_vec_estimation).max() * 1.3)
+    ax.set_xlim(0, N)
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('$n$')
     ax.legend()
-
-    ax.set_ylim(bottom=0)
-    ax.set_xlim(0, N)
 
     _save_or_show(filename)
     return fig, ax
@@ -161,64 +168,66 @@ def plot_mean_n_estimation_assessment(
 
 
 def plot_bayesian_mean_estimation(
-    n_vec: NDArray[(Any,), int], sample: NDArray[(Any, Any), float], L: int, filename=None
+    n_vec: NDArray[(Any,), int],
+    sample: NDArray[(Any, Any), float],
+    L: int,
+    n_vec_estimation: Optional[NDArray[(Any,), float]] = None,
+    filename=None,
 ):
     N = n_vec.size
     fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
+    legend_handles = []
 
     bin_centers = np.arange(N) + 0.5
 
     N_BARS_ALPHA = 0.3
-
-    ax.bar(
+    n_bars = ax.bar(
         bin_centers,
         n_vec,
         width=0.7,
         color=[*Color.N.as_rgb(), N_BARS_ALPHA],
         edgecolor=Color.N.value,
         linewidth=2,
+        label='$\\vec{n}$',
     )
+    legend_handles.append(n_bars)
 
-    est_color_rgb = Color.N_ESTIMATION.as_rgb()
+    if n_vec_estimation is not None:
+        est_hlines = _plot_n_estimation(ax, n_vec_estimation, L)
+        legend_handles.append(est_hlines)
+
+    inferred_color_rgb = Color.N_INFERRED.as_rgb()
 
     bin_hists_cm = ListedColormap(
         colors=np.array(
-            [[*est_color_rgb, alpha] for alpha in np.linspace(0, 1, 100)],
+            [[*inferred_color_rgb, alpha] for alpha in np.linspace(0, 1, 100)],
         ),
-        name='N_estimation_alhamap',
+        name='N_estimation_alphamap',
     )
 
     for i_bin, sample_in_bin in enumerate(sample.T):
-        if i_bin <= L or i_bin > N - L:
+        if i_bin <= L or i_bin >= N - L:
             continue
         hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=30, density=True)
         pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
         pcm_X = np.array([i_bin, i_bin + 1])
         pcm_C = np.tile(hist_in_bin, (2, 1)).T
-        ax.pcolormesh(
-            pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors='', cmap=bin_hists_cm, antialiased=True
-        )
+        ax.pcolormesh(pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors='', cmap=bin_hists_cm, antialiased=True)
 
-    ax.set_ylim(bottom=0)
+    legend_handles.append(
+        Patch(
+            facecolor=bin_hists_cm(0.75),
+            label='Результат байесовской деконволюции $\\vec{{n}}$',
+        )
+    )
+
+    ax.set_ylim(bottom=0, top=np.maximum(n_vec, n_vec_estimation).max() * 1.5)
     ax.set_xlim(0, N)
 
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('n')
 
-    ax.legend(
-        handles=[
-            Patch(
-                facecolor=[*Color.N.as_rgb(), N_BARS_ALPHA],
-                edgecolor=Color.N.value,
-                linewidth=2,
-                label='$\\vec{n}$',
-            ),
-            Patch(
-                facecolor=bin_hists_cm(0.75),
-                label='$\\vec{{n}}$ bayesian estimation',
-            ),
-        ]
-    )
+    ax.legend(handles=legend_handles)
 
     _save_or_show(filename)
     return fig, ax

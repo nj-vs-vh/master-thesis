@@ -14,16 +14,17 @@ from scipy.interpolate import interp1d
 from numpy.linalg import pinv
 from math import pi, erf
 
-from scipy.stats import multivariate_normal
+from scipy.stats._multivariate import multivariate_normal_frozen
 
 from functools import partial, lru_cache
 
 from tqdm import tqdm_notebook
-from typing import Union, Callable, Optional, Any
+from typing import Union, Callable, Optional, Any, Dict
 from nptyping import NDArray
 
 import modules.utils as utils
 from modules.ndepdf import ndepdf
+from modules.mvn_extension import P_between
 
 
 rng = np.random.default_rng()
@@ -172,6 +173,7 @@ class RandomizedIrEffect:
         self.ir_sample_mean = np.mean(self.ir_samples, axis=1)
         self.ir_sample_D = np.power(np.std(self.ir_samples, axis=1), 2)
         self.C_mat = self.calculate_C_mat()
+        self.C_mat_pinv = pinv(self.C_mat)
         self.Xi_mat = self.calculate_Xi_mat()
         self.mvn_mu_Sigma_as_func_of_n_vec = self.get_mvn_mu_Sigma_from_n_vec()
         # run njitted func once to let numba compile it (avoid skewing timing tests later!)
@@ -227,7 +229,7 @@ class RandomizedIrEffect:
         See \\subsection{Грубая оценка методом наименьших квадратов}
         """
         s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
-        return pinv(self.C_mat) @ s_vec
+        return self.C_mat_pinv @ s_vec
 
     def get_mvn_mu_Sigma_from_n_vec(self):
         L = self.L
@@ -254,22 +256,35 @@ class RandomizedIrEffect:
 
         return mu_Sigma
 
-    def get_multivariate_normal_S_vec(self, n_vec: NDArray[(Any,), float]):
-        mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
-        return multivariate_normal(mean=mu, cov=Sigma)
-
     def get_loglikelihood_mvn(
-        self, s_vec: NDArray[(Any,), float], s_vec_half_error: NDArray[(Any,), float]
+        self,
+        s_vec: NDArray[(Any,), float],
+        s_vec_half_error: NDArray[(Any,), float],
+        density: bool = False,
+        debug_integration: bool = False,
     ) -> Callable[[NDArray[(Any,), float]], float]:
         """Loglikelihood function for a given signal s_vec assuming independent and normal distributions of S_j"""
         s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
         s_vec_half_error = utils.slice_edge_effects(s_vec_half_error, self.L, self.N)
 
-        def loglikelihood_mvn(n_vec: NDArray[(Any,), float]) -> float:
+        # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.multivariate_normal.html
+        mvn_params_default = {
+            'maxpts': 1000 * self.N,
+        }
+
+        def loglikelihood_mvn(n_vec: NDArray[(Any,), float], mvn_params: Optional[Dict[str, Any]] = None) -> float:
+            if mvn_params is None:
+                mvn_params = mvn_params_default
             if np.any(n_vec < 0):  # guard for impossible values
                 return -np.inf
-            rv = self.get_multivariate_normal_S_vec(n_vec)
-            return np.log(rv.cdf(s_vec + s_vec_half_error) - rv.cdf(s_vec - s_vec_half_error))
+            mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
+            rv = multivariate_normal_frozen(mean=mu, cov=Sigma, **mvn_params)
+            if density:
+                return rv.logpdf(s_vec)
+            else:
+                return np.log(
+                    P_between(rv, s_vec - s_vec_half_error, s_vec + s_vec_half_error, debug=debug_integration)
+                )
 
         return loglikelihood_mvn
 
@@ -313,10 +328,14 @@ class RandomizedIrEffect:
 
         return loglikelihood_monte_carlo
 
+    # TODO: delete this method
+    ###################################################################################
+
     def get_loglikelihood_uncorrelated_mvn(
         self,
         s_vec: NDArray[(Any,), float],
         s_vec_half_error: NDArray[(Any,), float],
+        density: bool = False,
     ) -> Callable[[NDArray[(Any,), float]], float]:
         """Like get_loglikelihood_mvn, but all correlations between S_vec items are forced to 0.
 
@@ -330,15 +349,21 @@ class RandomizedIrEffect:
             mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
             sigmas = np.diagonal(Sigma)
             Sigma = np.diagflat(sigmas)
-            rv = multivariate_normal(mean=mu, cov=Sigma)
-            return np.log(rv.cdf(s_vec + s_vec_half_error) - rv.cdf(s_vec - s_vec_half_error))
+            rv = multivariate_normal_frozen(mean=mu, cov=Sigma)
+            if density:
+                return rv.logpdf(s_vec)
+            else:
+                return np.log(rv.cdf(s_vec + s_vec_half_error) - rv.cdf(s_vec - s_vec_half_error))
 
         return loglikelihood_mvn
+
+    ###################################################################################
 
     def get_loglikelihood_independent_normdist(
         self,
         s_vec: NDArray[(Any,), float],
         s_vec_half_error: NDArray[(Any,), float],
+        density: False,
     ) -> Callable[[NDArray[(Any,), float]], float]:
         """Like get_loglikelihood_uncorrelated_mvn, but with verbatim calculations and njitted efficient function"""
 
@@ -372,16 +397,17 @@ class RandomizedIrEffect:
                     Ds_j += n_vec[i] * ir_sample_D[lag]
                 sigma_s_j = np.sqrt(Ds_j)
                 # PDF
-                logL_addition = (
-                    -0.918938533205  # log(sqrt(2 pi))
-                    - np.log(sigma_s_j)
-                    - ((s_j - Es_j) / (1.41421356237 * sigma_s_j)) ** 2
-                )
-                # probability in interval
-                # logL_addition = np.log(
-                #     norm_cdf(s_j + s_j_half_error, mu=Es_j, sigma=sigma_s_j)
-                #     - norm_cdf(s_j - s_j_half_error, mu=Es_j, sigma=sigma_s_j)
-                # )
+                if density:
+                    logL_addition = (
+                        -0.918938533205  # log(sqrt(2 pi))
+                        - np.log(sigma_s_j)
+                        - ((s_j - Es_j) / (1.41421356237 * sigma_s_j)) ** 2
+                    )
+                else:
+                    logL_addition = np.log(
+                        norm_cdf(s_j + s_j_half_error, mu=Es_j, sigma=sigma_s_j)
+                        - norm_cdf(s_j - s_j_half_error, mu=Es_j, sigma=sigma_s_j)
+                    )
                 if np.isnan(logL_addition):
                     return -np.inf
                 logL += logL_addition

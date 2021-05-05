@@ -27,14 +27,7 @@ class SamplingConfig:
     # if 'given', n_vec_estimation must be a (n_walkers, N) matrix with ready-to use starting points
     starting_points_strategy: str = 'around_estimation'
     # see https://emcee.readthedocs.io/en/stable/user/moves/#moves-user
-    moves: List[Tuple[Move, float]] = field(
-        default_factory=lambda: [
-            (emcee.moves.StretchMove(), 1.0),
-            # (emcee.moves.DEMove(), 1.0),
-            # (emcee.moves.DESnookerMove(), 1.0),
-            # (emcee.moves.KDEMove(), 1.0),  # BAD -- low acceptance, very slow
-        ]
-    )
+    moves: List[Tuple[Move, float]] = field(default_factory=lambda: [(emcee.moves.StretchMove(), 1.0)])
     multiprocessing: bool = False
     autocorr_estimation_each: Optional[int] = None  # None to avoid estimation
     debug_acceptance_fraction_each: Optional[int] = None  # None to not debug
@@ -141,17 +134,22 @@ def starting_points_from_estimation(
     return starting_points
 
 
-def extract_independent_sample(sampler: EnsembleSampler):
+def extract_independent_sample(sampler: EnsembleSampler, debug: bool = False):
     tau = sampler.get_autocorr_time(quiet=True)
 
     burnin = int(2 * np.max(tau))
-    thin = int(0.5 * np.min(tau))
+    thin = int(0.9 * np.min(tau))
+
+    if debug:
+        print(f'Autocorrelation time is estimated at {np.mean(tau)} (ranges from {np.min(tau)} to {np.max(tau)})')
+        print(f'Burn-in = {burnin} samples')
+        print(f'Thinning = {thin} samples')
 
     min_number_of_burnins_in_chain = 3
     if min_number_of_burnins_in_chain * burnin > sampler.iteration:
         raise ValueError(
             f"Chain seems too short! Length is {sampler.iteration}, but must be at least "
-            + f"{min_number_of_burnins_in_chain}x longer than burn in time ({burnin:.2f})"
+            + f"{min_number_of_burnins_in_chain}x longer than burn in time = {burnin}"
         )
     return sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
