@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import corner
 
@@ -8,41 +7,10 @@ from matplotlib.patches import Patch
 
 from scipy.stats import norm
 
-from enum import Enum
-
 from typing import Any, Optional, List
 from nptyping import NDArray
 
-
-matplotlib.rcParams.update({'font.size': 12})
-
-
-TIME_LABEL = 'Время, бины'
-
-
-class Figsize(Enum):
-    SMALL = (4, 4)
-    NORMAL = (7, 5)
-    TRIPANEL = (7, 2)
-
-
-class Color(Enum):
-    N = '#0477DC'
-    S = '#DC6904'
-    N_ESTIMATION = '#f2003d'
-    N_INFERRED = '#00a80b'
-    S_APPROX = '#db040b'
-
-    def as_rgb(self):
-        hex_color = self.value.lstrip('#')
-        return [int(hex_color[i : i + 2], 16) / 256 for i in (0, 2, 4)]  # noqa
-
-
-def _save_or_show(filename: Optional[str]):
-    if filename:
-        plt.savefig(f'../doc/pic/{filename}.pdf')
-    else:
-        plt.show()
+from .common import TIME_LABEL, Figsize, Color, _save_or_show
 
 
 def plot_data_similarity_test(data_x, data_y, label_1, label_2):
@@ -241,7 +209,7 @@ def plot_S_j_marginal_normality_assessment(
     S_samples: List[NDArray[(N_plus_L, N_sample), float]], n_means: List[int], L: int, filename=None
 ):
     n_rows = len(n_means)
-    figsize = list(Figsize.TRIPANEL.value)
+    figsize = list(Figsize.TRIPANEL_HORIZ.value)
     figsize[1] *= n_rows
     fig, axes = plt.subplots(ncols=3, nrows=n_rows, figsize=figsize, gridspec_kw={'hspace': 0.3})
 
