@@ -409,6 +409,7 @@
 	Определим случайную функцию $\tilde{h}(t)$, которую будем использовать в качестве рандомизированной импульсной характеристики системы. Сначала факторизуем её следующим образом
 	
 	\begin{equation}
+		\label{eq:experimental-rir}
 		\tilde{h}(t) = C \, \tilde{C}_{PMT} \, h_I(t)
 	\end{equation}
 
@@ -432,7 +433,7 @@
 	\begin{figure}
 		\centering
 		\includegraphics[width=\columnwidth]{bayesian-deconvolution-with-experimantal-rir}
-		\caption{}
+		\caption{Решение задачи байесовской деконволюции для РИХ, определённой выражением (\ref{eq:experimental-rir}). Синие столбцы -- истинный входной сигнал $\vec{n}$, розовые полосы -- первичная грубая оценка, зелёным изображены маргинальные апостериорные распределения в центральных бинах (см. описание рис. \ref{pic:bayesian-estimation}).}
 		\label{pic:bayesian-deconvolution-with-experimantal-rir}
 	\end{figure}
 
