@@ -35,7 +35,7 @@ class RandomizedIr:
         self,
         ir_x: NDArray,
         ir_y: Union[NDArray, Callable[[], NDArray]],
-        factor: Optional[Callable[[], float]] = None,
+        factor: Optional[Callable[[int], NDArray]] = None,
         binsize: float = 1.0,
     ):
         """Create randomized impulse response
@@ -44,7 +44,8 @@ class RandomizedIr:
             ir_x (NDArray): impulse response sampling times. Assumed to be in bins unless `binsize` is specified
             ir_y (NDArray or callable outputting NDArray): impulse response's actual values, must be the same
                                                            length as `ir_x`. Units are opaque and propagate to signal.
-            factor (callable outputting float): random factor of IR. If not specified defaults to constant 1.
+            factor (callable outputting NDArray): function returning given number of random IR factor realization.
+                                                  If None (default), no factor is applied.
             binsize (float, optional): If `ir_x` is in some units other than bins, specify this for conversion.
                                        Defaults to 1.0.
         """
@@ -63,37 +64,60 @@ class RandomizedIr:
         if L_true - self.L < 1e-6:
             self.L -= 1
 
-        self.base_ir_generator: Callable[[], NDArray] = ir_y if callable(ir_y) else lambda: ir_y
-        ir_y_realization = self.base_ir_generator()
+        if callable(ir_y):
+            self.base_ir_type = 'generated'
+            self.base_ir_generator: Callable[[], NDArray] = ir_y
+            ir_y_realization = self.base_ir_generator()
+        else:
+            self.base_ir_type = 'frozen'
+            self.base_ir_frozen = ir_y
+            ir_y_realization = ir_y
         if not isinstance(ir_y_realization, NDArray) or ir_y_realization.shape != ir_x.shape:
             raise ValueError("ir_y must be or return numpy array of the same shape as ir_x")
-        self.factor_generator: Callable[[], float] = factor or (lambda: 1)
+        self.factor_generator = factor
 
-    def _realization(self):
-        return self.factor_generator() * self.base_ir_generator()
+    def _interp_realization(self, y):
+        return interp1d(
+            self.ir_x,
+            y,
+            kind="linear",
+            copy=False,
+            fill_value=0,
+            bounds_error=False,
+        )
 
     def __call__(self, x: NDArray) -> NDArray:
         """Evaluate randomized IR (i.e. its random realization) at given points
 
         Args:
-            x (NDArray): query points for IR
+            x (NDArray): query points for IR. If x is 1D, single realization of RIR is evaluated;
+                if x is 2D, signature is (N_query, N_batch): for each row new realization is generated
 
         Returns:
-            NDArray: realization of randomized IR
+            NDArray: realization of randomized IR, same size
         """
-        return interp1d(
-            self.ir_x,
-            self._realization(),
-            kind="linear",
-            copy=False,
-            fill_value=0,
-            bounds_error=False,
-        )(x)
+        if len(x.shape) == 1:
+            x = x.reshape((x.size, 1))
+        N_query, N_batch = x.shape
+        if self.factor_generator is not None:
+            factors = self.factor_generator(N_batch).reshape((1, N_batch))
+        else:
+            factors = np.ones((1, N_batch))
+        if self.base_ir_type == 'frozen':
+            realization_interp = self._interp_realization(self.base_ir_frozen)
+            y = realization_interp(x).reshape((N_query, N_batch))
+        elif self.base_ir_type == 'generated':
+            y = np.zeros((N_query, N_batch))
+            for i_batch, x_query in enumerate(x.T):
+                realization_interp = self._interp_realization(self.base_ir_generator())
+                y[:, i_batch] = realization_interp(x_query)
+        return factors * y
 
     def plot_realizations(self, count: int = 10, ax: plt.Axes = None):
+        realizations = self(np.tile(self.ir_x.reshape((self.ir_x.size, 1)), reps=(1, count)))
         ax = ax or plt.subplot(111)
-        for i in range(count):
-            ax.plot(self.ir_x, self._realization())
+        for realization in realizations.T:
+            ax.plot(self.ir_x, realization)
         plt.show()
 
     def convolve_with_n_vec(
@@ -136,7 +160,7 @@ class RandomizedIr:
             for _ in range(n_i):
                 uniform_sample = rng.random()
                 inbin_time = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
-                out_y[i : (i + self.L)] += self(ir_x_whole_bins + (1 - inbin_time))  # noqa
+                out_y[i : (i + self.L)] += self(ir_x_whole_bins + (1 - inbin_time))[:, 0]  # noqa
         return out_y
 
 
@@ -158,16 +182,17 @@ class RandomizedIrEffect:
         """
         self.rir = rir
         self.N = N
-        sample_t = range(self.L + 1)
         self.ir_samples = np.zeros((self.L + 1, samplesize))
 
         if inbin_invcdf is not None:
             inbin_invcdf = np.vectorize(inbin_invcdf)
-        uniform_sample = rng.random(size=(samplesize,))
-        inbin_times_sample = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
-        for sample_i, inbin_t in enumerate(inbin_times_sample):
-            rir_realization = rir(sample_t + inbin_t)
-            self.ir_samples[:, sample_i] = rir_realization
+        uniform_sample = rng.random(size=(1, samplesize))
+        inbin_time_offsets = inbin_invcdf(uniform_sample) if inbin_invcdf else uniform_sample
+        sample_ts = np.arange(start=0, stop=self.L + 1, step=1.0)
+        sample_ts = sample_ts.reshape((sample_ts.size, 1))
+        sample_ts = np.tile(sample_ts, reps=(1, samplesize))
+        sample_ts = sample_ts + inbin_time_offsets
+        self.ir_samples = rir(sample_ts)
 
         # means and dispersions of C(1, l)
         self.ir_sample_mean = np.mean(self.ir_samples, axis=1)

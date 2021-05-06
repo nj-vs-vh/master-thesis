@@ -75,13 +75,13 @@ def _plot_n_estimation(ax: plt.Axes, n_vec_estimation: NDArray[(Any,), int], L: 
     bin_indices = np.arange(N)
 
     ax.hlines(
-        *[np.concatenate((vec[:L+1], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
+        *[np.concatenate((vec[: L + 1], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
         colors=[Color.N_ESTIMATION.value],
         linewidths=[2],
         linestyles=['dotted'],
     )
     est_hlines = ax.hlines(
-        *[vec[L+1:-L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
+        *[vec[L + 1 : -L] for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],  # noqa
         colors=[Color.N_ESTIMATION.value],
         linewidths=[3],
         label='Оценка $\\vec{n}$ в предположении $\\mathbb{E} \\; \\vec{S} = \\vec{s}$',
@@ -180,7 +180,9 @@ def plot_bayesian_mean_estimation(
         pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
         pcm_X = np.array([i_bin, i_bin + 1])
         pcm_C = np.tile(hist_in_bin, (2, 1)).T
-        ax.pcolormesh(pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors='', cmap=bin_hists_cm, antialiased=True)
+        ax.pcolormesh(
+            pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors=[(0, 0, 0, 0)], cmap=bin_hists_cm, antialiased=True
+        )
 
     legend_handles.append(
         Patch(
@@ -189,7 +191,8 @@ def plot_bayesian_mean_estimation(
         )
     )
 
-    ax.set_ylim(bottom=0, top=np.maximum(n_vec, n_vec_estimation).max() * 1.5)
+    top_defining_values = np.maximum(n_vec, n_vec_estimation) if n_vec_estimation is not None else n_vec
+    ax.set_ylim(bottom=0, top=top_defining_values.max() * 1.5)
     ax.set_xlim(0, N)
 
     ax.set_xlabel(TIME_LABEL)

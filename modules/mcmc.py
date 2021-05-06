@@ -134,7 +134,7 @@ def starting_points_from_estimation(
     return starting_points
 
 
-def extract_independent_sample(sampler: EnsembleSampler, debug: bool = False):
+def extract_independent_sample(sampler: EnsembleSampler, max_sample_size: Optional[int] = None, debug: bool = False):
     tau = sampler.get_autocorr_time(quiet=True)
 
     burnin = int(2 * np.max(tau))
@@ -151,6 +151,12 @@ def extract_independent_sample(sampler: EnsembleSampler, debug: bool = False):
             f"Chain seems too short! Length is {sampler.iteration}, but must be at least "
             + f"{min_number_of_burnins_in_chain}x longer than burn in time = {burnin}"
         )
+
+    if max_sample_size is not None:
+        max_steps_from_end = int(thin * max_sample_size / sampler.nwalkers)
+        current_steps_from_end = sampler.iteration - burnin
+        print(max_steps_from_end, current_steps_from_end, sampler.iteration)
+        burnin = sampler.iteration - min(max_steps_from_end, current_steps_from_end)
     return sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
 

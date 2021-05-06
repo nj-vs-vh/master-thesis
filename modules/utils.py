@@ -46,3 +46,16 @@ def timer(args_formatter=None):
         return wrapper
 
     return decorator
+
+
+def enforce_bounds(logprob, n_vec_center, upper_bound_factor: int = 100):
+    n_vec_min = np.zeros_like(n_vec_center, dtype=float)
+    n_vec_max = n_vec_center * upper_bound_factor
+
+    @wraps(logprob)
+    def bounded_logprob(n_vec):
+        if np.any(np.logical_or(n_vec < n_vec_min, n_vec > n_vec_max)):
+            return - np.inf
+        return logprob(n_vec)
+
+    return bounded_logprob

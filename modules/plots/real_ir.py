@@ -7,10 +7,8 @@ from .common import TIME_LABEL, Figsize, Color, _save_or_show
 def plot_real_ir_shape_and_distribution(ir_t, ir_y, Cpmt_vals, Cpmt_pdf, Cpmt_cdf, filename=None):
     fig, (ax_top, ax_bot) = plt.subplots(nrows=2, figsize=Figsize.TWOPANEL_VERT.value)
 
-    max_t_bin = 15
     ax_top.plot(ir_t, ir_y, color=Color.S.value, linewidth=3)
-    ax_top.hlines(0, xmin=0, xmax=max_t_bin, colors=['k'], linewidths=[1])
-    ax_top.set_xlim(left=0, right=max_t_bin)
+    ax_top.hlines(0, xmin=0, xmax=ir_t.max(), colors=['k'], linewidths=[1])
     ax_top.set_xlabel(TIME_LABEL)
     ax_top.set_ylabel('$h_I(t)$')
 
