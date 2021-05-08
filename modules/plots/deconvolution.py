@@ -31,13 +31,18 @@ def plot_data_similarity_test(data_x, data_y, label_1, label_2):
 
 
 def plot_convolution(
-    n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float], delta: Optional[float] = None, filename=None
+    n_vec: NDArray[(Any,), int],
+    s_vec: NDArray[(Any,), float],
+    delta: Optional[float] = None,
+    filename=None,
+    fig_ax=None,
+    end_x_axis_on_N=False,
 ):
     """Problem setup plot. If delta is None, plot signal as precise, othewise as delta-wide error bars"""
     N = n_vec.size
     L = s_vec.size - N
 
-    fig, ax1 = plt.subplots(figsize=Figsize.NORMAL.value)
+    fig, ax1 = fig_ax or plt.subplots(figsize=Figsize.NORMAL.value)
 
     # bin stripes
     ax1.axhline(0, color='black')
@@ -87,7 +92,7 @@ def plot_convolution(
 
     ax1.set_ylim(bottom=0)
     ax2.set_ylim(bottom=0)
-    ax1.set_xlim(0, N + L)
+    ax1.set_xlim(0, N + L if not end_x_axis_on_N else N)
 
     _save_or_show(filename)
     return fig, [ax1, ax2]
@@ -164,9 +169,10 @@ def plot_bayesian_mean_estimation(
     L: int,
     n_vec_estimation: Optional[NDArray[(Any,), float]] = None,
     filename=None,
+    fig_ax=None,
 ):
+    fig, ax = fig_ax or plt.subplots(figsize=Figsize.NORMAL.value)
     N = n_vec.size
-    fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
     legend_handles = []
 
     bin_centers = np.arange(N) + 0.5
@@ -199,7 +205,7 @@ def plot_bayesian_mean_estimation(
     for i_bin, sample_in_bin in enumerate(sample.T):
         if i_bin <= L or i_bin >= N - L:
             continue
-        hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=30, density=True)
+        hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=10, density=True)
         pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
         pcm_X = np.array([i_bin, i_bin + 1])
         pcm_C = np.tile(hist_in_bin, (2, 1)).T
@@ -215,7 +221,7 @@ def plot_bayesian_mean_estimation(
     )
 
     top_defining_values = np.maximum(n_vec, n_vec_estimation) if n_vec_estimation is not None else n_vec
-    ax.set_ylim(bottom=0, top=top_defining_values.max() * 1.5)
+    ax.set_ylim(bottom=0, top=top_defining_values.max() * 1.7)
     ax.set_xlim(0, N)
 
     ax.set_xlabel(TIME_LABEL)
@@ -227,7 +233,7 @@ def plot_bayesian_mean_estimation(
     return fig, ax
 
 
-def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: List, ibin):
+def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: List, ibin, filename=None):
     fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
 
     samples_in_bin = [s[:, ibin] for s in samples]
@@ -238,14 +244,14 @@ def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: Lis
     for i, (sib, name) in enumerate(zip(samples_in_bin, sample_names)):
         color_i = np.array(Color.N_INFERRED.as_rgb())
         color_i *= ((1 + i) / (len(samples))) ** 2
-        ax.hist(
-            sib, bins=bin_edges, density=True, alpha=0.7, color=color_i, label=name
-        )
+        ax.hist(sib, bins=bin_edges, density=True, alpha=0.7, color=color_i, label=name)
 
     ax.axvline(n_vec[ibin], color=Color.N.value, label='Истинное значение')
 
     ax.set_xlabel(f'$n_{{{ibin}}}$')
     ax.legend()
+
+    _save_or_show(filename)
 
     return fig, ax
 

@@ -143,10 +143,16 @@ def starting_points_from_estimation(
 
 
 def extract_independent_sample(
-    sampler: EnsembleSampler, desired_sample_size: Optional[int] = None, debug: bool = False
+    sampler: EnsembleSampler,
+    desired_sample_size: Optional[int] = None,
+    tau_override: Optional[float] = None,
+    debug: bool = False,
 ) -> NDArray[(Any, Any), float]:
-    tau = sampler.get_autocorr_time(quiet=True, tol=0)
-    tau = tau[np.logical_not(np.isnan(tau))]
+    if tau_override is None:
+        tau = sampler.get_autocorr_time(quiet=True, tol=0)
+        tau = tau[np.logical_not(np.isnan(tau))]
+    else:
+        tau = np.tile(np.array([tau_override]), (sampler.nwalkers,))
 
     burnin = int(2 * np.max(tau))
     thin = int(0.9 * np.min(tau))
@@ -156,7 +162,7 @@ def extract_independent_sample(
         print(f'Burn-in = {burnin} samples')
         print(f'Thinning = {thin} samples')
 
-    min_number_of_burnins_in_chain = 3
+    min_number_of_burnins_in_chain = 2
     if min_number_of_burnins_in_chain * burnin > sampler.iteration:
         raise ValueError(
             f"Chain seems too short! Length is {sampler.iteration}, but must be at least "
