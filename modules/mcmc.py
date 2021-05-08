@@ -8,7 +8,7 @@ from multiprocessing import Pool
 
 from dataclasses import dataclass, field
 
-from typing import Any, Callable, List, Tuple, Optional
+from typing import Any, Callable, List, Tuple, Optional, Union
 from nptyping import NDArray
 from emcee.moves import Move
 from emcee.ensemble import EnsembleSampler
@@ -43,7 +43,7 @@ class SamplingResult:
 
 def run_mcmc(
     logposterior: Callable[[NDArray[(Any,), float]], float],
-    n_vec_estimation: NDArray[(Any,), float],
+    init_point: Union[NDArray[(Any,), float], NDArray[(Any, Any), float]],
     L: int,
     config: SamplingConfig,
 ) -> NDArray[(Any, Any), float]:
@@ -51,14 +51,22 @@ def run_mcmc(
 
     Args:
         logposterior (Callable[[NDArray[(Any,), float]], float]): function to draw sample from
-        n_vec_estimation (NDArray[(Any,), float]): initial guess for n_vec (= model params)
-        progress (bool): flag to print progress bar while sampling, default is False
+        init_point (NDArray[(Any,), float]): initial guess for n_vec (= model params) OR ini
+        L (int): rir.L
+        config (SamplingConfig): see SamplingConfig class for params
     """
-    N = n_vec_estimation.size
-
-    starting_points = starting_points_from_estimation(
-        n_vec_estimation, config.n_walkers, config.starting_points_strategy
-    )
+    if config.starting_points_strategy == 'given':
+        N = init_point.shape[1]
+    else:
+        if len(init_point.shape) > 1:
+            raise ValueError(
+                "2D init points array only allowed with SamplingCongig.starting_points_strategy='given', "
+                + f"but '{config.starting_points_strategy}' is passed."
+            )
+        N = init_point.size
+        init_point = starting_points_from_estimation(
+            init_point, n_walkers=config.n_walkers, strategy=config.starting_points_strategy
+        )
 
     pool = Pool() if config.multiprocessing else None
 
@@ -78,7 +86,7 @@ def run_mcmc(
         autocorr_estimated_at = []
         autocorr_estimates = []
         # prev_tau = np.inf  # for relative tau drift
-        for sample in sampler.sample(starting_points, iterations=config.n_samples, progress=config.progress_bar):
+        for sample in sampler.sample(init_point, iterations=config.n_samples, progress=config.progress_bar):
             if (
                 config.debug_acceptance_fraction_each is not None
                 and sampler.iteration % config.debug_acceptance_fraction_each == 0
@@ -134,8 +142,11 @@ def starting_points_from_estimation(
     return starting_points
 
 
-def extract_independent_sample(sampler: EnsembleSampler, max_sample_size: Optional[int] = None, debug: bool = False):
-    tau = sampler.get_autocorr_time(quiet=True)
+def extract_independent_sample(
+    sampler: EnsembleSampler, desired_sample_size: Optional[int] = None, debug: bool = False
+) -> NDArray[(Any, Any), float]:
+    tau = sampler.get_autocorr_time(quiet=True, tol=0)
+    tau = tau[np.logical_not(np.isnan(tau))]
 
     burnin = int(2 * np.max(tau))
     thin = int(0.9 * np.min(tau))
@@ -152,12 +163,18 @@ def extract_independent_sample(sampler: EnsembleSampler, max_sample_size: Option
             + f"{min_number_of_burnins_in_chain}x longer than burn in time = {burnin}"
         )
 
-    if max_sample_size is not None:
-        max_steps_from_end = int(thin * max_sample_size / sampler.nwalkers)
-        current_steps_from_end = sampler.iteration - burnin
-        print(max_steps_from_end, current_steps_from_end, sampler.iteration)
-        burnin = sampler.iteration - min(max_steps_from_end, current_steps_from_end)
-    return sampler.get_chain(discard=burnin, thin=thin, flat=True)
+    independent_sample = sampler.get_chain(discard=burnin, thin=thin, flat=True)
+
+    if desired_sample_size is not None:
+        independent_sample = independent_sample[-desired_sample_size:, :]
+        if independent_sample.shape[0] < desired_sample_size:
+            raise ValueError(
+                f"Cannot extract {desired_sample_size} from sampling result, "
+                + f"only {independent_sample.shape[0]} are available. "
+                + "Lower desired_sample_size or increase n_samples parameter to get long enough chain."
+            )
+
+    return independent_sample
 
 
 if __name__ == "__main__":

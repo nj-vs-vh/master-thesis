@@ -10,7 +10,7 @@ from scipy.stats import norm
 from typing import Any, Optional, List
 from nptyping import NDArray
 
-from .common import TIME_LABEL, Figsize, Color, _save_or_show
+from ._shared import TIME_LABEL, Figsize, Color, _save_or_show
 
 
 def plot_data_similarity_test(data_x, data_y, label_1, label_2):
@@ -30,7 +30,10 @@ def plot_data_similarity_test(data_x, data_y, label_1, label_2):
     return fig, ax
 
 
-def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float], filename=None):
+def plot_convolution(
+    n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float], delta: Optional[float] = None, filename=None
+):
+    """Problem setup plot. If delta is None, plot signal as precise, othewise as delta-wide error bars"""
     N = n_vec.size
     L = s_vec.size - N
 
@@ -50,10 +53,30 @@ def plot_convolution(n_vec: NDArray[(Any,), int], s_vec: NDArray[(Any,), float],
 
     ax2 = ax1.twinx()
 
+    if delta is not None:
+        for i in range(int(s_vec.max() / delta) + 1):
+            ax2.axhspan(
+                delta * i,
+                delta * (i + 1),
+                facecolor=([1, 1, 1, 0] if i % 2 == 0 else [*Color.S.as_rgb(), 1]),
+                alpha=0.05,
+                edgecolor=None,
+            )
+
     t_S = np.arange(1, N + L + 1)
 
     def plot_signal_part(start, end, dashed):
-        ax2.plot(t_S[start:end], s_vec[start:end], ('.-' if not dashed else '.:'), color=Color.S.value)
+        if delta is None:
+            ax2.plot(t_S[start:end], s_vec[start:end], ('.-' if not dashed else '.:'), color=Color.S.value)
+        else:
+            ax2.errorbar(
+                t_S[start:end],
+                s_vec[start:end] + delta / 2,
+                yerr=delta / 2,
+                fmt=('.-' if not dashed else '.:'),
+                elinewidth=(2 if not dashed else 0.5),
+                color=Color.S.value,
+            )
 
     plot_signal_part(0, L + 1, dashed=True)  # t in [1, L] with +1 point to the right (connection)
     plot_signal_part(L, N, dashed=False)  # t in [L+1, N]
@@ -201,6 +224,29 @@ def plot_bayesian_mean_estimation(
     ax.legend(handles=legend_handles)
 
     _save_or_show(filename)
+    return fig, ax
+
+
+def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: List, ibin):
+    fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
+
+    samples_in_bin = [s[:, ibin] for s in samples]
+    min_overall = min(s.min() for s in samples_in_bin)
+    max_overall = max(s.max() for s in samples_in_bin)
+    bin_edges = np.linspace(min_overall, max_overall, num=30)
+
+    for i, (sib, name) in enumerate(zip(samples_in_bin, sample_names)):
+        color_i = np.array(Color.N_INFERRED.as_rgb())
+        color_i *= ((1 + i) / (len(samples))) ** 2
+        ax.hist(
+            sib, bins=bin_edges, density=True, alpha=0.7, color=color_i, label=name
+        )
+
+    ax.axvline(n_vec[ibin], color=Color.N.value, label='Истинное значение')
+
+    ax.set_xlabel(f'$n_{{{ibin}}}$')
+    ax.legend()
+
     return fig, ax
 
 

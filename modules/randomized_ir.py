@@ -24,7 +24,7 @@ from nptyping import NDArray
 
 import modules.utils as utils
 from modules.ndepdf import ndepdf
-from modules.mvn_extension import P_between
+from modules import mvn_extension
 
 
 rng = np.random.default_rng()
@@ -248,13 +248,15 @@ class RandomizedIrEffect:
 
         return Xi_mat
 
-    def estimate_n_vec(self, s_vec: NDArray[(Any,), float]) -> NDArray[(Any,), float]:
+    def estimate_n_vec(self, s_vec: NDArray[(Any,), float], delta: Optional[float] = None) -> NDArray[(Any,), float]:
         """LLS-based estimation of n vector using Moore-Penrose pseudoinverse matrix.
 
         See \\subsection{Грубая оценка методом наименьших квадратов}
         """
         s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
-        return self.C_mat_pinv @ s_vec
+        if delta is not None:
+            s_vec += delta / 2
+        return np.abs(self.C_mat_pinv @ s_vec)
 
     def get_mvn_mu_Sigma_from_n_vec(self):
         L = self.L
@@ -284,17 +286,16 @@ class RandomizedIrEffect:
     def get_loglikelihood_mvn(
         self,
         s_vec: NDArray[(Any,), float],
-        s_vec_half_error: NDArray[(Any,), float],
+        delta: float,
         density: bool = False,
         debug_integration: bool = False,
     ) -> Callable[[NDArray[(Any,), float]], float]:
         """Loglikelihood function for a given signal s_vec assuming independent and normal distributions of S_j"""
         s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
-        s_vec_half_error = utils.slice_edge_effects(s_vec_half_error, self.L, self.N)
 
         # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.multivariate_normal.html
         mvn_params_default = {
-            'maxpts': 1000 * self.N,
+            'maxpts': 100000 * self.N,
         }
 
         def loglikelihood_mvn(n_vec: NDArray[(Any,), float], mvn_params: Optional[Dict[str, Any]] = None) -> float:
@@ -307,9 +308,16 @@ class RandomizedIrEffect:
             if density:
                 return rv.logpdf(s_vec)
             else:
-                return np.log(
-                    P_between(rv, s_vec - s_vec_half_error, s_vec + s_vec_half_error, debug=debug_integration)
-                )
+                # TEMPORARY #
+
+                # alan = mvn_extension.integrate_pdf(rv, s_vec, delta)
+                # mc = mvn_extension.integrate_pdf_fast(rv, s_vec, delta)
+                # print(f"{alan}\t{mc}")
+                # alan_mc.append([alan, mc])
+                # print(f"alan > mc: {100 * np.abs(alan - mc) / (0.5 * (alan + mc)):.2f} %")
+
+                #############
+                return np.log(mvn_extension.integrate_pdf_fast(rv, s_vec, delta, debug=debug_integration))
 
         return loglikelihood_mvn
 
@@ -353,41 +361,10 @@ class RandomizedIrEffect:
 
         return loglikelihood_monte_carlo
 
-    # TODO: delete this method
-    ###################################################################################
-
-    def get_loglikelihood_uncorrelated_mvn(
-        self,
-        s_vec: NDArray[(Any,), float],
-        s_vec_half_error: NDArray[(Any,), float],
-        density: bool = False,
-    ) -> Callable[[NDArray[(Any,), float]], float]:
-        """Like get_loglikelihood_mvn, but all correlations between S_vec items are forced to 0.
-
-        Emulates old behavior of fast normdist likelihood function"""
-        s_vec = utils.slice_edge_effects(s_vec, self.L, self.N)
-        s_vec_half_error = utils.slice_edge_effects(s_vec_half_error, self.L, self.N)
-
-        def loglikelihood_mvn(n_vec: NDArray[(Any,), float]) -> float:
-            if np.any(n_vec < 0):  # guard for impossible values
-                return -np.inf
-            mu, Sigma = self.mvn_mu_Sigma_as_func_of_n_vec(n_vec)
-            sigmas = np.diagonal(Sigma)
-            Sigma = np.diagflat(sigmas)
-            rv = multivariate_normal_frozen(mean=mu, cov=Sigma)
-            if density:
-                return rv.logpdf(s_vec)
-            else:
-                return np.log(rv.cdf(s_vec + s_vec_half_error) - rv.cdf(s_vec - s_vec_half_error))
-
-        return loglikelihood_mvn
-
-    ###################################################################################
-
     def get_loglikelihood_independent_normdist(
         self,
         s_vec: NDArray[(Any,), float],
-        s_vec_half_error: NDArray[(Any,), float],
+        delta: float,
         density: False,
     ) -> Callable[[NDArray[(Any,), float]], float]:
         """Like get_loglikelihood_uncorrelated_mvn, but with verbatim calculations and njitted efficient function"""
@@ -409,7 +386,7 @@ class RandomizedIrEffect:
             if np.any(n_vec < 0):  # guard for impossible values
                 return -np.inf
             logL = 0
-            for j, (s_j, s_j_half_error) in enumerate(zip(s_vec, s_vec_half_error)):
+            for j, s_j in enumerate(s_vec):
                 j += 1  # from indexing array (0-based) to indexing time points (1-based)
                 if j <= L or j > N:  # cutting off signal edges
                     continue
@@ -430,8 +407,7 @@ class RandomizedIrEffect:
                     )
                 else:
                     logL_addition = np.log(
-                        norm_cdf(s_j + s_j_half_error, mu=Es_j, sigma=sigma_s_j)
-                        - norm_cdf(s_j - s_j_half_error, mu=Es_j, sigma=sigma_s_j)
+                        norm_cdf(s_j + delta, mu=Es_j, sigma=sigma_s_j) - norm_cdf(s_j, mu=Es_j, sigma=sigma_s_j)
                     )
                 if np.isnan(logL_addition):
                     return -np.inf

@@ -40,7 +40,7 @@ def timer(args_formatter=None):
             start_time = timeit.default_timer()
             result = func(*args, **kwargs)
             elapsed = timeit.default_timer() - start_time
-            print(f'{func.__name__}({args_formatter(*args, **kwargs)}) took {elapsed:.3f} seconds to complete.')
+            print(f'{func.__name__}({args_formatter(*args, **kwargs)}) took {elapsed} seconds to complete.')
             return result
 
         return wrapper

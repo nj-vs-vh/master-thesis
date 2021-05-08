@@ -6,7 +6,7 @@ new code should use submodules directly:
 imports are here to keep methodoogical notebooks working as they use 'import modules.plots'
 """
 
-from .methodological import (
+from .deconvolution import (
     plot_convolution,
     plot_data_similarity_test,
     plot_mean_n_estimation,

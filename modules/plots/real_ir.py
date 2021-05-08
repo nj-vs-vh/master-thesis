@@ -1,7 +1,7 @@
 
 import matplotlib.pyplot as plt
 
-from .common import TIME_LABEL, Figsize, Color, _save_or_show
+from ._shared import TIME_LABEL, Figsize, Color, _save_or_show
 
 
 def plot_real_ir_shape_and_distribution(ir_t, ir_y, Cpmt_vals, Cpmt_pdf, Cpmt_cdf, filename=None):
