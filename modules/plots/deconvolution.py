@@ -233,7 +233,9 @@ def plot_bayesian_mean_estimation(
     return fig, ax
 
 
-def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: List, ibin, filename=None):
+def plot_bayesian_mean_estimation_in_bin(
+    n_vec, samples: List, sample_names: List, ibin: int, n_vec_estimation: NDArray, filename=None
+):
     fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
 
     samples_in_bin = [s[:, ibin] for s in samples]
@@ -247,9 +249,13 @@ def plot_bayesian_mean_estimation_in_bin(n_vec, samples: List, sample_names: Lis
         ax.hist(sib, bins=bin_edges, density=True, alpha=0.7, color=color_i, label=name)
 
     ax.axvline(n_vec[ibin], color=Color.N.value, label='Истинное значение')
+    ax.axvline(n_vec_estimation[ibin], color=Color.N_ESTIMATION.value, label='Грубая оценка')
 
     ax.set_xlabel(f'$n_{{{ibin}}}$')
     ax.legend()
+
+    _, top = ax.get_ylim()
+    ax.set_ylim(top=1.5 * top)
 
     _save_or_show(filename)
 
