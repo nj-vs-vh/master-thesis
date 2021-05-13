@@ -1,9 +1,19 @@
+"""
+Experimental Randomized IR reading and preprocessing
+"""
+
+
 import numpy as np
 import numdifftools as nd
 from scipy.interpolate import interp1d
+from pathlib import Path
 
 from typing import Tuple, Any, Optional
 from nptyping import NDArray
+
+
+CUR_DIR = Path(__file__).parent
+PMT_DATA_DIR = CUR_DIR / '../experimental-data/pmt-characteristics'
 
 
 FloatVector = NDArray[(Any,), float]
@@ -17,7 +27,7 @@ def _normalized_ir_shape(ir_t, ir_shape) -> FloatVector:
 
 
 def read_ir_shape() -> Tuple[FloatVector, FloatVector]:
-    ir_shape = np.loadtxt('../experimental-data/pmt-characteristics/ir-shape.txt')
+    ir_shape = np.loadtxt(PMT_DATA_DIR / 'ir-shape.txt')
     ir_t = np.arange(0, ir_shape.size, dtype=float)  # ns, ir shape is sampled at 1 ns
     ir_t /= 12.5  # ns -> bin
 
@@ -49,7 +59,7 @@ def cut_ir_shape(
     return ir_t, _normalized_ir_shape(ir_t, ir_shape)
 
 
-Cpmt_invcdf_data = np.loadtxt('../experimental-data/pmt-characteristics/ir-amplification-invcdf.dat')
+Cpmt_invcdf_data = np.loadtxt(PMT_DATA_DIR / 'ir-amplification-invcdf.dat')
 Cpmt_values_lookup = Cpmt_invcdf_data[:, 1] / 1.723  # normalizing to mean = 1
 Cpmt_cdf_lookup = Cpmt_invcdf_data[:, 0]
 Cpmt_invcdf_func = interp1d(Cpmt_cdf_lookup, Cpmt_values_lookup, kind='cubic', fill_value="extrapolate")
