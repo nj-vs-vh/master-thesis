@@ -22,13 +22,15 @@ SignalPerChannel = NDArray[(N_CHANNELS, SIGNAL_LENGTH), float]
 Signal = NDArray[(SIGNAL_LENGTH,), float]
 
 
+class BrokenChannelException(Exception):
+    pass
+
+
 class Event:
     """Experimental event with all its aspects (frame, mean current, calibration) stored together"""
 
     # pre-loaded mean currents for all events, converted to code units
     _mean_currents_by_event_id: FloatPerChannel = None
-
-    C_ref = 0.326  # code units * bin / photoelectron
 
     def __init__(self, event_id):
         self.event_id = event_id
@@ -38,24 +40,60 @@ class Event:
         self._read_calibration()
 
     @property
-    def mean_current(self):
+    def mean_currents(self) -> FloatPerChannel:
         try:
             return self._mean_currents_by_event_id[self.event_id]
         except KeyError:
             raise ValueError(f"Mean current for event ID {self.event_id} not found!")
 
-    def signal_cu(self, i_ch: int, wnd_start: Optional[int] = None, wnd_end: Optional[int] = None) -> Signal:
-        """Mean and high freq parts of the signal summed, is code units"""
-        wnd_start = 0 if wnd_start is None else wnd_start
-        wnd_end = self.frame.shape[1] if wnd_end is None else wnd_end
-        return self.mean_current[i_ch] + self.frame[i_ch, wnd_start:wnd_end]
+    @property
+    def mean_n_photoelectrons(self) -> FloatPerChannel:
+        return self.mean_currents / self.C
 
-    def signal_relative(
-        self, i_ch: int, wnd_start: Optional[int] = None, wnd_end: Optional[int] = None
-    ) -> Tuple[Signal, float]:
-        """Full signal ready for deconvolution and its associated ADC delta in relative units"""
-        C = self.C_ref / self.calibration[i_ch]
-        return self.signal_cu(i_ch, wnd_start, wnd_end) / C, 1 / C
+    C_ref = 0.326  # code units * bin / photoelectron
+
+    @property
+    def C(self) -> FloatPerChannel:
+        return self.C_ref / self.calibration
+
+    TRIGGER_BIN = 433  # approximately
+
+    def signal_in_channel(
+        self, i_ch: int, units: str = 'scaled', center_bin: Optional[int] = None, window: Optional[int] = None
+    ) -> Tuple[Signal, Signal, float]:
+        """Signal in a given channel and it's rounding error.
+
+        'units' argument:
+            'code' -- signal is returned as it would be recorded by an ideal ADC
+            'scaled' -- signal ready for deconvolution with unit RIR
+
+        Returns:
+            t (Signal): times relative to start of the frame
+            s (Signal): values of signal corresponding to t
+            delta (float): ADC rounding error
+        """
+        self.validate_i_ch(i_ch)
+        if units == 'scaled':
+            C = self.C_ref / self.calibration[i_ch]
+        elif units == 'code':
+            C = 1
+        else:
+            raise ValueError(f"Unknown units '{units}'")
+        center_bin = self.TRIGGER_BIN if center_bin is None else center_bin
+        window = 100 if window is None else window
+        window_half = window // 2
+        t = np.arange(center_bin - window_half, center_bin + window_half + 1)
+        signal = self.mean_currents[i_ch] + self.frame[i_ch, t]
+        adc_step = 1
+        return t, signal / C, adc_step / C
+
+    BROKEN_CHANNELS = {49, 78}
+
+    def validate_i_ch(self, i_ch: int):
+        if not 0 <= i_ch < N_CHANNELS:
+            raise ValueError(f"Invalid chanell no: {i_ch}, must be from 0 to {N_CHANNELS - 1}")
+        if i_ch in self.BROKEN_CHANNELS:
+            raise BrokenChannelException(f"Channel {i_ch} is broken")
 
     # Data reading methods #
 
@@ -96,5 +134,5 @@ class Event:
 if __name__ == "__main__":
     e = Event(10675)
     # print(mc.min(), mc.max())
-    print(e.mean_current[1])
+    print(e.mean_currents[1])
     print(e.calibration)

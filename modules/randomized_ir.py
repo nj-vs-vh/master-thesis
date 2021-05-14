@@ -457,7 +457,7 @@ class RandomizedIrEffect:
         for lag, sample in enumerate(self.ir_samples):
             if lag > max_lag:
                 break
-            _, _, histogram = ax.hist(sample, label=f"lag={lag}", alpha=0.3, density=True)
+            _, _, histogram = ax.hist(sample, label=f"lag={lag}", alpha=0.3, density=False)
             mu = self.mgf_moment(1, 1, lag)
             sigma = np.sqrt(self.mgf_moment(2, 1, lag) - mu ** 2)
             pdf_t = np.linspace(np.min(sample), np.max(sample), 100)

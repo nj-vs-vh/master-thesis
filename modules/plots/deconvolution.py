@@ -98,9 +98,10 @@ def plot_convolution(
     return fig, [ax1, ax2]
 
 
-def _plot_n_estimation(ax: plt.Axes, n_vec_estimation: NDArray[(Any,), int], L: int):
+def _plot_n_estimation(ax: plt.Axes, n_vec_estimation: NDArray[(Any,), int], L: int, t_offset: float = None):
     N = n_vec_estimation.size
-    bin_indices = np.arange(N)
+    t_offset = 0 if t_offset is None else t_offset
+    bin_indices = np.arange(N) + t_offset
 
     ax.hlines(
         *[np.concatenate((vec[: L + 1], vec[-L:])) for vec in (n_vec_estimation, bin_indices, bin_indices + 1)],
@@ -117,13 +118,22 @@ def _plot_n_estimation(ax: plt.Axes, n_vec_estimation: NDArray[(Any,), int], L: 
     return est_hlines
 
 
-def plot_mean_n_estimation(n_vec: NDArray[(Any,), int], n_vec_estimation: NDArray[(Any,), int], L: int, filename=None):
+def plot_mean_n_estimation(
+    n_vec: Optional[NDArray[(Any,), int]], n_vec_estimation: NDArray[(Any,), int], L: int, filename=None
+):
+    if n_vec is None:
+        no_n_vec = True
+        n_vec = np.zeros_like(n_vec_estimation)
+    else:
+        no_n_vec = False
+
     N = n_vec.size
 
     fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
 
     bin_indices = np.arange(N)
-    ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=Color.N.value, label='$\\vec{n}$')
+    if not no_n_vec:
+        ax.bar(bin_indices + 0.5, n_vec, width=0.7, color=Color.N.value, label='$\\vec{n}$')
 
     _plot_n_estimation(ax, n_vec_estimation, L)
 
@@ -164,33 +174,44 @@ def plot_mean_n_estimation_assessment(
 
 
 def plot_bayesian_mean_estimation(
-    n_vec: NDArray[(Any,), int],
+    n_vec: Optional[NDArray[(Any,), int]],
     sample: NDArray[(Any, Any), float],
     L: int,
     n_vec_estimation: Optional[NDArray[(Any,), float]] = None,
     filename=None,
     fig_ax=None,
+    signal_t: Optional[NDArray] = None,
 ):
+    if n_vec is None:
+        no_n_vec = True
+        n_vec = np.zeros_like(n_vec_estimation)
+    else:
+        no_n_vec = False
+
     fig, ax = fig_ax or plt.subplots(figsize=Figsize.NORMAL.value)
     N = n_vec.size
     legend_handles = []
 
-    bin_centers = np.arange(N) + 0.5
+    # -1 accounts for the fact that \vec{s} is indexed from 1, and signal_t from 0
+    t_offset = signal_t[0] - 1 if signal_t is not None else 0
+
+    bin_centers = np.arange(N) + 0.5 + t_offset
 
     N_BARS_ALPHA = 0.3
-    n_bars = ax.bar(
-        bin_centers,
-        n_vec,
-        width=0.7,
-        color=[*Color.N.as_rgb(), N_BARS_ALPHA],
-        edgecolor=Color.N.value,
-        linewidth=2,
-        label='$\\vec{n}$',
-    )
-    legend_handles.append(n_bars)
+    if not no_n_vec:
+        n_bars = ax.bar(
+            bin_centers,
+            n_vec,
+            width=0.7,
+            color=[*Color.N.as_rgb(), N_BARS_ALPHA],
+            edgecolor=Color.N.value,
+            linewidth=2,
+            label='$\\vec{n}$',
+        )
+        legend_handles.append(n_bars)
 
     if n_vec_estimation is not None:
-        est_hlines = _plot_n_estimation(ax, n_vec_estimation, L)
+        est_hlines = _plot_n_estimation(ax, n_vec_estimation, L, t_offset=t_offset)
         legend_handles.append(est_hlines)
 
     inferred_color_rgb = Color.N_INFERRED.as_rgb()
@@ -207,7 +228,7 @@ def plot_bayesian_mean_estimation(
             continue
         hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=10, density=True)
         pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
-        pcm_X = np.array([i_bin, i_bin + 1])
+        pcm_X = t_offset + np.array([i_bin, i_bin + 1])
         pcm_C = np.tile(hist_in_bin, (2, 1)).T
         ax.pcolormesh(
             pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors=[(0, 0, 0, 0)], cmap=bin_hists_cm, antialiased=True
@@ -222,7 +243,7 @@ def plot_bayesian_mean_estimation(
 
     top_defining_values = np.maximum(n_vec, n_vec_estimation) if n_vec_estimation is not None else n_vec
     ax.set_ylim(bottom=0, top=top_defining_values.max() * 1.7)
-    ax.set_xlim(0, N)
+    ax.set_xlim(t_offset, t_offset + N)
 
     ax.set_xlabel(TIME_LABEL)
     ax.set_ylabel('n')
@@ -248,7 +269,8 @@ def plot_bayesian_mean_estimation_in_bin(
         color_i *= ((1 + i) / (len(samples))) ** 2
         ax.hist(sib, bins=bin_edges, density=True, alpha=0.7, color=color_i, label=name)
 
-    ax.axvline(n_vec[ibin], color=Color.N.value, label='Истинное значение')
+    if n_vec is not None:
+        ax.axvline(n_vec[ibin], color=Color.N.value, label='Истинное значение')
     ax.axvline(n_vec_estimation[ibin], color=Color.N_ESTIMATION.value, label='Грубая оценка')
 
     ax.set_xlabel(f'$n_{{{ibin}}}$')
