@@ -6,10 +6,13 @@ Experimental Randomized IR reading and preprocessing
 import numpy as np
 import numdifftools as nd
 from scipy.interpolate import interp1d
+from scipy.stats import truncnorm
 from pathlib import Path
 
 from typing import Tuple, Any, Optional
 from nptyping import NDArray
+
+from modules.randomized_ir import RandomizedIr, RandomizedIrEffect
 
 
 CUR_DIR = Path(__file__).parent
@@ -59,6 +62,8 @@ def cut_ir_shape(
     return ir_t, _normalized_ir_shape(ir_t, ir_shape)
 
 
+# for regular ФЭУ 84/3 channels
+
 Cpmt_invcdf_data = np.loadtxt(PMT_DATA_DIR / 'ir-amplification-invcdf.dat')
 Cpmt_values_lookup = Cpmt_invcdf_data[:, 1] / 1.723  # normalizing to mean = 1
 Cpmt_cdf_lookup = Cpmt_invcdf_data[:, 0]
@@ -74,3 +79,49 @@ def read_C_pmt_cdf_pdf(n_sample_pts: int = 50) -> Tuple[FloatVector, FloatVector
 
 def generate_C_pmt(n: int = 1) -> FloatVector:
     return Cpmt_invcdf_func(rng.uniform(size=n))
+
+
+# for Hamamatsu Hamamatsu R3886, see Fig. 9 in
+# Antonov, R. A., Bonvech, E. A., Chernov, D. V., Podgrudkov, D. A., & Roganova, T. M. (2016).
+# The LED calibration system of the SPHERE-2 detector. Astroparticle Physics, 77, 55–65.
+# https://doi.org/10.1016/j.astropartphys.2016.01.004
+
+Ham_Cpmt_cut_gauss_mean = 0.499  # pC
+Ham_Cpmt_cut_gauss_sigma = 0.23  # pC
+truncnorm_a = - Ham_Cpmt_cut_gauss_mean / Ham_Cpmt_cut_gauss_sigma  # 0 expressed as Z value
+Ham_Cpmt_rv = truncnorm(a=truncnorm_a, b=np.inf)
+Ham_Cpmt_rv_mean = Ham_Cpmt_rv.mean()
+
+
+def generate_Ham_C_pmt(n: int) -> FloatVector:
+    return (Ham_Cpmt_rv.rvs(size=n) - truncnorm_a) / (Ham_Cpmt_rv_mean - truncnorm_a)
+
+
+# Convinience function to create RandomizedIrEffects from real IR data
+
+def get_rireffs(N: int) -> Tuple[RandomizedIrEffect, RandomizedIrEffect]:
+    """
+    Return RandomizedIrEffects for Hamamatsu and ФЭУ 84/3
+    """
+    ir_t, ir_shape = read_ir_shape()
+    ir_t, ir_shape = cut_ir_shape(ir_t, ir_shape, excluded_integral_percentile=0.02)  # fine-tuned for reasonable length
+
+    samplesize = 10 ** 7
+
+    rir = RandomizedIr(ir_x=ir_t, ir_y=ir_shape, factor=generate_C_pmt)
+    rireff = RandomizedIrEffect(rir, N, samplesize=samplesize)
+
+    ham_rir = RandomizedIr(ir_x=ir_t, ir_y=ir_shape, factor=generate_Ham_C_pmt)
+    ham_rireff = RandomizedIrEffect(ham_rir, N, samplesize=samplesize)
+    return ham_rireff, rireff
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    c = generate_Ham_C_pmt(1000000)
+
+    print(c.mean())
+
+    plt.hist(c, bins=30)
+    plt.savefig('hamamatsu_C_pmt_test.png')

@@ -1,5 +1,5 @@
 """
-Experimental data reading and preprocessing
+Experimental data reading and processing
 """
 
 import numpy as np
@@ -7,6 +7,10 @@ from pathlib import Path
 
 from typing import Any, Tuple, Optional
 from nptyping import NDArray
+
+from modules.experimental_rir import get_rireffs
+from modules.randomized_ir import RandomizedIr
+import modules.mcmc as mcmc
 
 
 CUR_DIR = Path(__file__).parent
@@ -33,7 +37,7 @@ class Event:
     _mean_currents_by_event_id: FloatPerChannel = None
 
     def __init__(self, event_id):
-        self.event_id = event_id
+        self.id_ = event_id
         if self._mean_currents_by_event_id is None:
             self._read_mean_currents()
         self._read_event_frame()
@@ -42,9 +46,9 @@ class Event:
     @property
     def mean_currents(self) -> FloatPerChannel:
         try:
-            return self._mean_currents_by_event_id[self.event_id]
+            return self._mean_currents_by_event_id[self.id_]
         except KeyError:
-            raise ValueError(f"Mean current for event ID {self.event_id} not found!")
+            raise ValueError(f"Mean current for event ID {self.id_} not found!")
 
     @property
     def mean_n_photoelectrons(self) -> FloatPerChannel:
@@ -56,7 +60,7 @@ class Event:
     def C(self) -> FloatPerChannel:
         return self.C_ref / self.calibration
 
-    TRIGGER_BIN = 433  # approximately
+    TRIGGER_BIN = 428  # approximately
 
     def signal_in_channel(
         self, i_ch: int, units: str = 'scaled', center_bin: Optional[int] = None, window: Optional[int] = None
@@ -99,21 +103,21 @@ class Event:
 
     def _read_event_frame(self):
         try:
-            with open(EXP_DATA_DIR / f'event-frames/{self.event_id}.txt') as f:
+            with open(EXP_DATA_DIR / f'event-frames/{self.id_}.txt') as f:
                 self.height: float = float(f.readline().strip())
                 # TODO: find out what it is :)
                 *self.inclin, self.SOMETHIN_UNKNOWN = [float(v) for v in f.readline().strip().split()]
                 f.readline()
                 self.frame: SignalPerChannel = np.loadtxt(f).T[:N_CHANNELS, :]
         except FileNotFoundError:
-            raise ValueError(f"Frame for event ID {self.event_id} not found!")
+            raise ValueError(f"Frame for event ID {self.id_} not found!")
 
     def _read_calibration(self):
         try:
-            calibration_data = np.loadtxt(EXP_DATA_DIR / f'event-calibrations/{self.event_id}.cal')
+            calibration_data = np.loadtxt(EXP_DATA_DIR / f'event-calibrations/{self.id_}.cal')
             self.calibration: FloatPerChannel = calibration_data[:N_CHANNELS, -1]
         except OSError:
-            raise ValueError(f"Calibration for event ID {self.event_id} not found!")
+            raise ValueError(f"Calibration for event ID {self.id_} not found!")
 
     @classmethod
     def _read_mean_currents(cls):
@@ -131,8 +135,93 @@ class Event:
         return 0.38 * curr_muA
 
 
+class EventProcessor:
+    """Service class wrapping all signal processing routines"""
+
+    TEMP_DATA_DIR = (CUR_DIR / '../temp-data').resolve()
+    DECONV_RESULTS_DIR = TEMP_DATA_DIR / 'deconvolution-results'
+
+    def __init__(self, N: int = 45, verbosity: int = 1, preliminary_run_length: int = 10 ** 4):
+        self.verbosity = verbosity
+        self.N = N
+        self.preliminary_run_length = preliminary_run_length
+        self.ham_rireff, self.feu84_rireff = get_rireffs(N)
+
+    def log(self, msg: str, min_verbosity: int = 1):
+        if self.verbosity >= min_verbosity:
+            print(msg)
+
+    def __call__(self, event: Event):
+        self.log('\n' + '=' * 25 + '\n' + f" Processing event #{event.id_}" + '\n' + '=' * 25 + '\n')
+        for i_ch in range(N_CHANNELS):
+            deconvolution_result_path = self._deconvolution_result_path(event.id_, i_ch)
+            self.log(f'\nDeconvolving channel #{i_ch}...')
+            if deconvolution_result_path.exists():
+                deconv_data = np.load(deconvolution_result_path)
+                signal_t = deconv_data['signal_t']
+                sample = deconv_data['sample']
+                self.log(f'Channel #{i_ch} deconvolution results loaded', 2)
+            else:
+                try:
+                    self.log('No saved deconvolution results found, processing...', 2)
+                    signal_t, signal, adc_step = event.signal_in_channel(i_ch, window=self.N)
+                    rireff = self.ham_rireff if i_ch == 0 else self.feu84_rireff
+                    sample = self._process_signal_with_rireff(signal, adc_step, rireff)
+
+                    np.savez(deconvolution_result_path, signal_t=signal_t, sample=sample)
+                    self.log(f'Channel #{i_ch} deconvolution results saved', 2)
+                except BrokenChannelException:
+                    continue
+                except ValueError:
+                    self.log(f"Error while processing channel {i_ch}! Moving on...")
+                    continue
+
+            # cutting first and last L badly deconvoluted bins
+            signal_t = signal_t[rireff.L : -rireff.L]  # noqa
+            sample = sample[:, rireff.L : -rireff.L]  # noqa
+
+    def _deconvolution_result_path(self, event_id: int, i_ch: int) -> Path:
+        event_dir = self.DECONV_RESULTS_DIR / str(event_id)
+        event_dir.mkdir(exist_ok=True)
+        return event_dir / f"{i_ch}.deconv"
+
+    def _process_signal_with_rireff(
+        self, signal: Signal, adc_step: float, rireff: RandomizedIr
+    ) -> NDArray[(Any, Any), float]:
+        n_vec_estimation = rireff.estimate_n_vec(signal, delta=adc_step)
+
+        result_preliminary = mcmc.run_mcmc(
+            logposterior=rireff.get_loglikelihood_independent_normdist(signal, delta=adc_step, density=False),
+            init_point=n_vec_estimation,
+            L=rireff.L,
+            config=mcmc.SamplingConfig(
+                n_walkers=256, n_samples=self.preliminary_run_length, progress_bar=(self.verbosity > 1)
+            ),
+        )
+        taus = result_preliminary.sampler.get_autocorr_time(tol=0, quiet=True)
+        tau = taus[np.logical_not(np.isnan(taus))].mean()
+        if self.verbosity > 1:
+            print(f'Estimated tau={tau}')
+
+        n_walkers_final = 128
+        init_pts = mcmc.extract_independent_sample(
+            result_preliminary.sampler, tau_override=tau, desired_sample_size=n_walkers_final
+        )
+        result = mcmc.run_mcmc(
+            logposterior=rireff.get_loglikelihood_mvn(signal, delta=adc_step, density=False),
+            init_point=init_pts,
+            L=rireff.L,
+            config=mcmc.SamplingConfig(
+                n_walkers=n_walkers_final,
+                n_samples=4 * tau,
+                progress_bar=(self.verbosity > 1),
+                starting_points_strategy='given',
+            ),
+        )
+        return mcmc.extract_independent_sample(result.sampler, tau_override=tau, debug=(self.verbosity > 2))
+
+
 if __name__ == "__main__":
     e = Event(10675)
-    # print(mc.min(), mc.max())
-    print(e.mean_currents[1])
-    print(e.calibration)
+    processor = EventProcessor(N=45, verbosity=3)
+    processor(e)

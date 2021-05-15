@@ -295,7 +295,7 @@ class RandomizedIrEffect:
 
         # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.multivariate_normal.html
         mvn_params_default = {
-            'maxpts': 100000 * self.N,
+            'maxpts': 50 * self.N,
         }
 
         def loglikelihood_mvn(n_vec: NDArray[(Any,), float], mvn_params: Optional[Dict[str, Any]] = None) -> float:
@@ -318,6 +318,7 @@ class RandomizedIrEffect:
 
                 #############
                 return np.log(mvn_extension.integrate_pdf_fast(rv, s_vec, delta, debug=debug_integration))
+                # return np.log(mvn_extension.integrate_pdf(rv, s_vec, delta, debug=debug_integration))
 
         return loglikelihood_mvn
 
@@ -398,7 +399,6 @@ class RandomizedIrEffect:
                     Es_j += n_vec[i] * ir_sample_mean[lag]
                     Ds_j += n_vec[i] * ir_sample_D[lag]
                 sigma_s_j = np.sqrt(Ds_j)
-                # PDF
                 if density:
                     logL_addition = (
                         -0.918938533205  # log(sqrt(2 pi))
