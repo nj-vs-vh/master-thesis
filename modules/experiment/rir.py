@@ -16,7 +16,7 @@ from modules.randomized_ir import RandomizedIr, RandomizedIrEffect
 
 
 CUR_DIR = Path(__file__).parent
-PMT_DATA_DIR = CUR_DIR / '../experimental-data/pmt-characteristics'
+PMT_DATA_DIR = CUR_DIR / '../../experimental-data/pmt-characteristics'
 
 
 FloatVector = NDArray[(Any,), float]

@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any, Tuple, Optional
 from nptyping import NDArray
 
-from modules.experimental_rir import get_rireffs
+from modules.experiment.rir import get_rireffs
 from modules.randomized_ir import RandomizedIr
 import modules.mcmc as mcmc
 
 
 CUR_DIR = Path(__file__).parent
-EXP_DATA_DIR = CUR_DIR / '../experimental-data'
+EXP_DATA_DIR = CUR_DIR / '../../experimental-data'
 
 
 N_CHANNELS = 109
@@ -95,7 +95,7 @@ class Event:
 
     def validate_i_ch(self, i_ch: int):
         if not 0 <= i_ch < N_CHANNELS:
-            raise ValueError(f"Invalid chanell no: {i_ch}, must be from 0 to {N_CHANNELS - 1}")
+            raise ValueError(f"Invalid channel no: {i_ch}, must be from 0 to {N_CHANNELS - 1}")
         if i_ch in self.BROKEN_CHANNELS:
             raise BrokenChannelException(f"Channel {i_ch} is broken")
 
@@ -105,8 +105,7 @@ class Event:
         try:
             with open(EXP_DATA_DIR / f'event-frames/{self.id_}.txt') as f:
                 self.height: float = float(f.readline().strip())
-                # TODO: find out what it is :)
-                *self.inclin, self.SOMETHIN_UNKNOWN = [float(v) for v in f.readline().strip().split()]
+                self.inclin = [float(v) for v in f.readline().strip().split()]
                 f.readline()
                 self.frame: SignalPerChannel = np.loadtxt(f).T[:N_CHANNELS, :]
         except FileNotFoundError:
@@ -222,6 +221,6 @@ class EventProcessor:
 
 
 if __name__ == "__main__":
-    e = Event(10675)
+    e = Event(10687)
     processor = EventProcessor(N=45, verbosity=3)
     processor(e)
