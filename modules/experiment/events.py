@@ -11,6 +11,7 @@ from nptyping import NDArray
 from modules.experiment.rir import get_rireffs
 from modules.randomized_ir import RandomizedIr
 import modules.mcmc as mcmc
+import modules.signal_reconstruction as sigrec
 
 
 CUR_DIR = Path(__file__).parent
@@ -137,8 +138,9 @@ class Event:
 class EventProcessor:
     """Service class wrapping all signal processing routines"""
 
-    TEMP_DATA_DIR = (CUR_DIR / '../temp-data').resolve()
+    TEMP_DATA_DIR = (CUR_DIR / '../../temp-data').resolve()
     DECONV_RESULTS_DIR = TEMP_DATA_DIR / 'deconvolution-results'
+    SIGREC_DIR = TEMP_DATA_DIR / 'signal-reconstruction'
 
     def __init__(self, N: int = 45, verbosity: int = 1, preliminary_run_length: int = 10 ** 4):
         self.verbosity = verbosity
@@ -153,6 +155,7 @@ class EventProcessor:
     def __call__(self, event: Event):
         self.log('\n' + '=' * 25 + '\n' + f" Processing event #{event.id_}" + '\n' + '=' * 25 + '\n')
         for i_ch in range(N_CHANNELS):
+
             deconvolution_result_path = self._deconvolution_result_path(event.id_, i_ch)
             self.log(f'\nDeconvolving channel #{i_ch}...')
             if deconvolution_result_path.exists():
@@ -175,14 +178,37 @@ class EventProcessor:
                     self.log(f"Error while processing channel {i_ch}! Moving on...")
                     continue
 
-            # cutting first and last L badly deconvoluted bins
-            signal_t = signal_t[rireff.L : -rireff.L]  # noqa
-            sample = sample[:, rireff.L : -rireff.L]  # noqa
+            sigrec_path = self._signal_reconstruction_path(event.id_, i_ch)
+            self.log(f'\nReconstructing signal in channel #{i_ch}...')
+            if sigrec_path.exists():
+                # deconv_data = np.load(deconvolution_result_path)
+                # signal_t = deconv_data['signal_t']
+                # sample = deconv_data['sample']
+                # self.log(f'Channel #{i_ch} deconvolution results loaded', 2)
+                pass
+            else:
+                try:
+                    # cutting first and last L badly deconvoluted bins
+                    signal_t = signal_t[rireff.L : -rireff.L]  # noqa
+                    sample = sample[:, rireff.L : -rireff.L]  # noqa
+                    self.log('No saved signal reconstruction, processing...', 2)
+
+                    theta_sample = self._reconstruct_signal(
+                        sample, signal_t, mean_n_phels=event.mean_n_photoelectrons[i_ch]
+                    )
+
+                    np.save(sigrec_path, theta_sample)
+                    self.log(f'Channel #{i_ch} signal reconstruction saved', 2)
+                except Exception as e:
+                    self.log(f"Error while reconstructing signal in channel {i_ch}: {e}! Moving on...")
+                    continue
+
+    # DECONVOLUTION #
 
     def _deconvolution_result_path(self, event_id: int, i_ch: int) -> Path:
         event_dir = self.DECONV_RESULTS_DIR / str(event_id)
         event_dir.mkdir(exist_ok=True)
-        return event_dir / f"{i_ch}.deconv"
+        return event_dir / f"{i_ch}.deconv.npz"
 
     def _process_signal_with_rireff(
         self, signal: Signal, adc_step: float, rireff: RandomizedIr
@@ -192,15 +218,13 @@ class EventProcessor:
         result_preliminary = mcmc.run_mcmc(
             logposterior=rireff.get_loglikelihood_independent_normdist(signal, delta=adc_step, density=False),
             init_point=n_vec_estimation,
-            L=rireff.L,
             config=mcmc.SamplingConfig(
                 n_walkers=256, n_samples=self.preliminary_run_length, progress_bar=(self.verbosity > 1)
             ),
         )
         taus = result_preliminary.sampler.get_autocorr_time(tol=0, quiet=True)
         tau = taus[np.logical_not(np.isnan(taus))].mean()
-        if self.verbosity > 1:
-            print(f'Estimated tau={tau}')
+        self.log(f'Estimated tau={tau}', 1)
 
         n_walkers_final = 128
         init_pts = mcmc.extract_independent_sample(
@@ -209,7 +233,6 @@ class EventProcessor:
         result = mcmc.run_mcmc(
             logposterior=rireff.get_loglikelihood_mvn(signal, delta=adc_step, density=False),
             init_point=init_pts,
-            L=rireff.L,
             config=mcmc.SamplingConfig(
                 n_walkers=n_walkers_final,
                 n_samples=4 * tau,
@@ -219,8 +242,53 @@ class EventProcessor:
         )
         return mcmc.extract_independent_sample(result.sampler, tau_override=tau, debug=(self.verbosity > 2))
 
+    # SIGNAL RECONSTRUCTION #
+
+    def _signal_reconstruction_path(self, event_id: int, i_ch: int) -> Path:
+        event_dir = self.SIGREC_DIR / str(event_id)
+        event_dir.mkdir(exist_ok=True)
+        return event_dir / f"{i_ch}.signal.npy"
+
+    def _reconstruct_signal(
+        self, sample: sigrec.SignalSample, signal_t: sigrec.SignalSample, mean_n_phels: float
+    ) -> NDArray[(Any, Any), float]:
+        loglike = sigrec.get_signal_reconstruction_loglike(sample, signal_t, mean_n_phels, simulate_packets=False)
+        logprior = sigrec.get_bounding_logprior(sample, signal_t, mean_n_phels)
+
+        def logposterior(theta):
+            logp = logprior(theta)
+            return logp if np.isinf(logp) else logp + loglike(theta)
+
+        n_walkers = 256
+        theta_init = sigrec.estimate_theta_from_sample(sample, signal_t, n_walkers)
+
+        tau = 500
+
+        theta_init_mean = theta_init.mean(axis=0)
+        theta_init_std = theta_init.std(axis=0)
+        self.log(
+            "Rough parameters estimation: \n"
+            + f"\tn_eas = {theta_init_mean[0]} +/- {theta_init_std[0]}"
+            + f"\tt_mean = {theta_init_mean[1]} +/- {theta_init_std[1]}"
+            + f"\tsigma_t = {theta_init_mean[2]} +/- {theta_init_std[2]}",
+            3,
+        )
+
+        result = mcmc.run_mcmc(
+            logposterior=logposterior,
+            init_point=theta_init,
+            config=mcmc.SamplingConfig(
+                n_walkers=n_walkers,
+                n_samples=5 * tau,
+                progress_bar=(self.verbosity > 1),
+                starting_points_strategy='given',
+            ),
+        )
+
+        return mcmc.extract_independent_sample(result.sampler, tau_override=tau)
+
 
 if __name__ == "__main__":
-    e = Event(10687)
+    e = Event(10675)
     processor = EventProcessor(N=45, verbosity=3)
     processor(e)

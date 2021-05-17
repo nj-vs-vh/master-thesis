@@ -189,7 +189,7 @@ def plot_bayesian_mean_estimation(
         no_n_vec = False
 
     fig, ax = fig_ax or plt.subplots(figsize=Figsize.NORMAL.value)
-    N = n_vec.size
+    N = sample.shape[1]
     legend_handles = []
 
     # -1 accounts for the fact that \vec{s} is indexed from 1, and signal_t from 0
@@ -241,8 +241,9 @@ def plot_bayesian_mean_estimation(
         )
     )
 
-    top_defining_values = np.maximum(n_vec, n_vec_estimation) if n_vec_estimation is not None else n_vec
-    ax.set_ylim(bottom=0, top=top_defining_values.max() * 1.7)
+    # top_defining_values = np.maximum(n_vec, n_vec_estimation) if n_vec_estimation is not None else n_vec
+    _, top = ax.get_ylim()
+    ax.set_ylim(bottom=0, top=top * 1.3)
     ax.set_xlim(t_offset, t_offset + N)
 
     ax.set_xlabel(TIME_LABEL)

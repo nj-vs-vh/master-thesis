@@ -1,6 +1,9 @@
 import numpy as np
 import timeit
 from functools import wraps
+from numba import njit
+from scipy.special import gamma
+from math import erf
 
 from typing import Any
 from nptyping import NDArray
@@ -59,3 +62,25 @@ def enforce_bounds(logprob, n_vec_center, upper_bound_factor: int = 100):
         return logprob(n_vec)
 
     return bounded_logprob
+
+
+@njit
+def norm_cdf(x, mu, sigma):
+    return np.array(
+        [
+            0.5 * (1 + erf((x_i - mu) / (sigma * 1.41421356237)))
+            for x_i in x
+        ]
+    )
+
+
+@njit
+def poisson_pmf(k: NDArray[(Any), float], lmb: float):
+    k_flattened = k.reshape(k.size)
+    k_factorial = np.zeros_like(k_flattened)
+    for i, k_ in enumerate(k_flattened):
+        k_factorial[i] = gamma(k_ + 1) if k_ > 0 else np.inf
+    return np.exp(-lmb) * (np.power(lmb, k)) / k_factorial.reshape(k.shape)
+
+
+# print(poisson_pmf(np.array([1, -10000], dtype=float), 4))

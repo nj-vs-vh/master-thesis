@@ -13,7 +13,7 @@ from nptyping import NDArray
 from emcee.moves import Move
 from emcee.ensemble import EnsembleSampler
 
-from modules.utils import generate_poissonian_ns, slice_edge_effects
+from modules.utils import generate_poissonian_ns
 
 
 rng = np.random.default_rng()
@@ -44,7 +44,6 @@ class SamplingResult:
 def run_mcmc(
     logposterior: Callable[[NDArray[(Any,), float]], float],
     init_point: Union[NDArray[(Any,), float], NDArray[(Any, Any), float]],
-    L: int,
     config: SamplingConfig,
 ) -> NDArray[(Any, Any), float]:
     """High-level routine to sample posterior probability, automatically estimating burn-in and thinning
@@ -97,7 +96,6 @@ def run_mcmc(
                 continue
 
             tau = sampler.get_autocorr_time(tol=0)
-            tau = slice_edge_effects(tau, L, N)
 
             autocorr_estimates.append(np.mean(tau))
             autocorr_estimated_at.append(sampler.iteration)
