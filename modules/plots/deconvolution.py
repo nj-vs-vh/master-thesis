@@ -173,6 +173,33 @@ def plot_mean_n_estimation_assessment(
     return fig, ax
 
 
+def _plot_bayesian_deconvolution_result(
+    ax: plt.Axes, sample: NDArray[(Any, Any), float], t_offset: float, L: int, N: int
+):
+    inferred_color_rgb = Color.N_INFERRED.as_rgb()
+    bin_hists_cm = ListedColormap(
+        colors=np.array(
+            [[*inferred_color_rgb, alpha] for alpha in np.linspace(0, 1, 100)],
+        ),
+        name='N_estimation_alphamap',
+    )
+
+    handles = []
+    for i_bin, sample_in_bin in enumerate(sample.T):
+        if i_bin <= L or i_bin >= N - L:
+            continue
+        hist_in_bin, n_value_bin_edges = np.histogram(sample_in_bin, bins=10, density=True)
+        pcm_Y = 0.5 * (n_value_bin_edges[:-1] + n_value_bin_edges[1:])
+        pcm_X = t_offset + np.array([i_bin, i_bin + 1])
+        pcm_C = np.tile(hist_in_bin, (2, 1)).T
+        handles.append(
+            ax.pcolormesh(
+                pcm_X, pcm_Y, pcm_C, shading='flat', edgecolors=[(0, 0, 0, 0)], cmap=bin_hists_cm, antialiased=True
+            )
+        )
+    return handles
+
+
 def plot_bayesian_mean_estimation(
     n_vec: Optional[NDArray[(Any,), int]],
     sample: NDArray[(Any, Any), float],

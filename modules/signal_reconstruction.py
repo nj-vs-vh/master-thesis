@@ -29,13 +29,14 @@ def estimate_theta_from_sample(sample: SignalSample, signal_t: Signal, n_walkers
     return np.concatenate((n_init, t_init, sigma_init), axis=1)
 
 
-def get_bounding_logprior(signal_sample: SignalSample, signal_t: Signal, mean_n_phels: float):
+def get_logprior(signal_sample: SignalSample, signal_t: Signal, mean_n_phels: float):
     t_mean_min, t_mean_max = signal_t[0], signal_t[-1]
 
     signal_mean = signal_sample.mean(axis=0)
     signal_std = signal_sample.std(axis=0)
     n_eas_min = 0.0
-    n_eas_max = np.sum(signal_mean + signal_std) - mean_n_phels * (t_mean_max - t_mean_min)
+    # n_eas_max = np.sum(signal_mean + signal_std) - mean_n_phels * (t_mean_max - t_mean_min)
+    n_eas_max = np.sum(signal_mean + 5 * signal_std)
 
     sigma_min = 0.0
     sigma_max = (t_mean_max - t_mean_min) / 2
@@ -44,7 +45,16 @@ def get_bounding_logprior(signal_sample: SignalSample, signal_t: Signal, mean_n_
     theta_max = np.array([n_eas_max, t_mean_max, sigma_max])
 
     def logprior(theta):
-        return 0 if ((theta_min <= theta).all() and (theta <= theta_max).all()) else -np.inf
+        if not ((theta_min <= theta).all() and (theta <= theta_max).all()):
+            return -np.inf
+        return (
+            # exp decaying prior on n_EAS
+            # see /media/njvh/last-child/Science archive/1маг/пакеты фотонов/pics/N_distribution.png
+            - theta[0] / 40
+            # gaussian prior on arrival time sigma
+            # see std_range_stats.png in the same dir
+            - (theta[2] - 2.4) / (2)
+        )
 
     return logprior
 

@@ -253,24 +253,24 @@ class EventProcessor:
         self, sample: sigrec.SignalSample, signal_t: sigrec.SignalSample, mean_n_phels: float
     ) -> NDArray[(Any, Any), float]:
         loglike = sigrec.get_signal_reconstruction_loglike(sample, signal_t, mean_n_phels, simulate_packets=False)
-        logprior = sigrec.get_bounding_logprior(sample, signal_t, mean_n_phels)
+        logprior = sigrec.get_logprior(sample, signal_t, mean_n_phels)
 
         def logposterior(theta):
             logp = logprior(theta)
             return logp if np.isinf(logp) else logp + loglike(theta)
 
-        n_walkers = 256
+        n_walkers = 512
         theta_init = sigrec.estimate_theta_from_sample(sample, signal_t, n_walkers)
 
-        tau = 500
+        tau = 200
 
         theta_init_mean = theta_init.mean(axis=0)
         theta_init_std = theta_init.std(axis=0)
         self.log(
-            "Rough parameters estimation: \n"
-            + f"\tn_eas = {theta_init_mean[0]} +/- {theta_init_std[0]}"
-            + f"\tt_mean = {theta_init_mean[1]} +/- {theta_init_std[1]}"
-            + f"\tsigma_t = {theta_init_mean[2]} +/- {theta_init_std[2]}",
+            "Rough parameters estimation:"
+            + f"\n\tn_eas = {theta_init_mean[0]} +/- {theta_init_std[0]}"
+            + f"\n\tt_mean = {theta_init_mean[1]} +/- {theta_init_std[1]}"
+            + f"\n\tsigma_t = {theta_init_mean[2]} +/- {theta_init_std[2]}",
             3,
         )
 
@@ -287,8 +287,37 @@ class EventProcessor:
 
         return mcmc.extract_independent_sample(result.sampler, tau_override=tau)
 
+    # convinience functions for reading temp data
+
+    def read_deconv_result(self, event_id, i_ch):
+        deconv_path = self._deconvolution_result_path(event_id, i_ch)
+        if not deconv_path.exists():
+            raise FileNotFoundError(f"No saved doconvolution for {event_id} event {i_ch} channel")
+        data = np.load(deconv_path)
+        return data['sample'], data['signal_t']
+
+    def read_deconv_frame(self, event_id):
+        frame = []
+        channels = np.arange(109)
+        nan_signal = np.zeros((self.N,))
+        nan_signal[:] = np.nan
+        for i_ch in channels:
+            try:
+                sample, _ = self.read_deconv_result(event_id, i_ch)
+                frame.append(sample.mean(axis=0))
+            except FileNotFoundError:
+                frame.append(nan_signal)
+        return np.array(frame).T, channels
+
+    def read_signal_reconstruction(self, event_id, i_ch) -> NDArray:
+        sigrec_path = self._signal_reconstruction_path(event_id, i_ch)
+        if not sigrec_path.exists():
+            raise FileNotFoundError(f"No saved doconvolution for {event_id} event {i_ch} channel")
+        theta_sample = np.load(sigrec_path)
+        return theta_sample
+
 
 if __name__ == "__main__":
-    e = Event(10675)
     processor = EventProcessor(N=45, verbosity=3)
-    processor(e)
+    processor(Event(10675))
+    processor(Event(10687))
