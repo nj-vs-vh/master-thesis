@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, Optional, Literal
 from nptyping import NDArray
 
 from modules.experiment.rir import get_rireffs
@@ -152,11 +152,12 @@ class EventProcessor:
     DECONV_RESULTS_DIR = TEMP_DATA_DIR / 'deconvolution-results'
     SIGREC_DIR = TEMP_DATA_DIR / 'signal-reconstruction'
 
-    def __init__(self, N: int = 45, verbosity: int = 1, preliminary_run_length: int = 10 ** 4):
+    def __init__(self, N: int = 45, verbosity: int = 1, preliminary_run_length: int = 10 ** 4, load_rir: bool = True):
         self.verbosity = verbosity
         self.N = N
         self.preliminary_run_length = preliminary_run_length
-        self.ham_rireff, self.feu84_rireff = get_rireffs(N)
+        if load_rir:
+            self.ham_rireff, self.feu84_rireff = get_rireffs(N)
 
     def log(self, msg: str, min_verbosity: int = 1):
         if self.verbosity >= min_verbosity:
@@ -352,6 +353,22 @@ class EventProcessor:
             raise FileNotFoundError(f"No saved deconvolution for {event_id} event {i_ch} channel")
         theta_sample = np.load(sigrec_path)
         return theta_sample
+
+    def read_reconstruction_marginal_sample_per_channel(
+        self, event_id, parameter: Literal['n', 't', 'sigma']
+    ) -> Tuple[NDArray, NDArray]:
+        parameter_values = ['n', 't', 'sigma']
+        parameter_i = parameter_values.index(parameter)
+        channels_with_signals = []
+        param_samples = []
+        for i_ch in range(N_CHANNELS):
+            try:
+                theta_sample = self.read_signal_reconstruction(event_id, i_ch)
+            except FileNotFoundError:
+                continue
+            channels_with_signals.append(i_ch)
+            param_samples.append(theta_sample[:, parameter_i])
+        return np.array(param_samples).T, np.array(channels_with_signals)
 
     def read_signal_significances(self, event_id: int) -> NDArray:
         path = self._frame_significance_path(event_id)
