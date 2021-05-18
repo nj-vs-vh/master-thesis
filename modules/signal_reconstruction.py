@@ -96,6 +96,32 @@ def get_signal_reconstruction_loglike(
     return loglike
 
 
+def signal_delta_bic(signal_sample: SignalSample, signal_t: Signal, mean_n_phels: float, theta_sample):
+    """BIC-based evidence against null hypothesis that signal is noise fluctuation
+
+    <0   : it's most likely noise
+    0-2  : it's probably noise but maybe...
+    2-6  : it might be a real signal
+    6-10 : i think it's a real signal!
+    >10  : just look at this chonky boi of a signal!!!
+    """
+
+    def bic(k, n, max_loglike):
+        return k * np.log(n) - 2 * max_loglike
+
+    signal_loglike = get_signal_reconstruction_loglike(
+        signal_sample, signal_t, mean_n_phels, simulate_packets=True, njitted=True,
+    )
+
+    max_noise_loglike = signal_loglike(np.array([0, 1, 1]))  # no photons
+    max_signal_loglike = np.max(np.array([signal_loglike(theta) for theta in theta_sample]))
+
+    noise_bic = bic(0, signal_sample.shape[0], max_noise_loglike)
+    signal_bic = bic(3, signal_sample.shape[0], max_signal_loglike)
+
+    return noise_bic - signal_bic
+
+
 if __name__ == "__main__":
     from pathlib import Path
 

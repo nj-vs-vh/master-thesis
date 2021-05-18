@@ -4,6 +4,7 @@ Experimental data reading and processing
 
 import numpy as np
 from pathlib import Path
+from tqdm import tqdm
 
 from typing import Any, Tuple, Optional
 from nptyping import NDArray
@@ -39,6 +40,7 @@ class Event:
             self._read_mean_currents()
         self._read_event_frame()
         self._read_calibration()
+        self.estimated_frame_center = self._estimate_frame_center()
 
     @property
     def mean_currents(self) -> FloatPerChannel:
@@ -58,6 +60,18 @@ class Event:
         return self.C_ref / self.calibration
 
     TRIGGER_BIN = 428  # approximately
+
+    def _estimate_frame_center(self):
+        window = 300
+        frame_sum = None
+        for i_ch in range(N_CHANNELS):
+            try:
+                t, signal, _ = self.signal_in_channel(i_ch=i_ch, center_bin=self.TRIGGER_BIN, window=window)
+                frame_sum = signal if frame_sum is None else frame_sum + signal
+            except ValueError:
+                continue
+        frame_sum -= np.min(frame_sum)
+        return np.sum(frame_sum * t) / np.sum(frame_sum)
 
     def signal_in_channel(
         self, i_ch: int, units: str = 'scaled', center_bin: Optional[int] = None, window: Optional[int] = None
@@ -80,7 +94,7 @@ class Event:
             C = 1
         else:
             raise ValueError(f"Unknown units '{units}'")
-        center_bin = self.TRIGGER_BIN if center_bin is None else center_bin
+        center_bin = int(self.estimated_frame_center) if center_bin is None else center_bin
         window = 100 if window is None else window
         window_half = window // 2
         t = np.arange(center_bin - window_half, center_bin + window_half + 1)
@@ -175,18 +189,15 @@ class EventProcessor:
                     continue
 
             sigrec_path = self._signal_reconstruction_path(event.id_, i_ch)
-            self.log(f'\nReconstructing signal in channel #{i_ch}...')
             if sigrec_path.exists():
-                # deconv_data = np.load(deconvolution_result_path)
-                # signal_t = deconv_data['signal_t']
-                # sample = deconv_data['sample']
-                # self.log(f'Channel #{i_ch} deconvolution results loaded', 2)
-                pass
+                self.log(f'\nSignal reconstruction in channel #{i_ch} already done, loading.')
+                # theta_sample = self.read_signal_reconstruction(event.id_, i_ch)
             else:
                 try:
+                    self.log(f'\nReconstructing signal in channel #{i_ch}...')
                     # cutting first and last L badly deconvoluted bins
-                    signal_t = signal_t[rireff.L : -rireff.L]  # noqa
-                    sample = sample[:, rireff.L : -rireff.L]  # noqa
+                    signal_t = signal_t[self.feu84_rireff.L : -self.feu84_rireff.L]  # noqa
+                    sample = sample[:, self.feu84_rireff.L : -self.feu84_rireff.L]  # noqa
                     self.log('No saved signal reconstruction, processing...', 2)
 
                     theta_sample = self._reconstruct_signal(
@@ -198,6 +209,29 @@ class EventProcessor:
                 except Exception as e:
                     self.log(f"Error while reconstructing signal in channel {i_ch}: {e}! Moving on...")
                     continue
+
+        frame_sign_path = self._frame_significance_path(event.id_)
+        if frame_sign_path.exists():
+            pass
+        else:
+            self.log('\nCalculating signal significances...')
+            significances = []
+            channels = range(N_CHANNELS)
+            if self.verbosity >= 1:
+                channels = tqdm(channels)
+            for i_ch in channels:
+                try:
+                    theta_sample = self.read_signal_reconstruction(event.id_, i_ch)
+                    signal_sample, signal_t = processor.read_deconv_result(event.id_, i_ch)
+                    significances.append(
+                        sigrec.signal_delta_bic(
+                            signal_sample, signal_t, event.mean_n_photoelectrons[i_ch], theta_sample
+                        )
+                    )
+                except FileNotFoundError:
+                    significances.append(-100)
+            np.save(frame_sign_path, np.array(significances))
+            self.log('Significances saved')
 
     # DECONVOLUTION #
 
@@ -245,6 +279,13 @@ class EventProcessor:
         event_dir.mkdir(exist_ok=True)
         return event_dir / f"{i_ch}.signal.npy"
 
+    def _frame_significance_path(
+        self, event_id: int
+    ) -> Path:  # stored separately from reconstruction for historical reasons
+        event_dir = self.SIGREC_DIR / str(event_id)
+        event_dir.mkdir(exist_ok=True)
+        return event_dir / "significances.npy"
+
     def _reconstruct_signal(
         self, sample: sigrec.SignalSample, signal_t: sigrec.SignalSample, mean_n_phels: float
     ) -> NDArray[(Any, Any), float]:
@@ -288,7 +329,7 @@ class EventProcessor:
     def read_deconv_result(self, event_id, i_ch):
         deconv_path = self._deconvolution_result_path(event_id, i_ch)
         if not deconv_path.exists():
-            raise FileNotFoundError(f"No saved doconvolution for {event_id} event {i_ch} channel")
+            raise FileNotFoundError(f"No saved deconvolution for {event_id} event {i_ch} channel")
         data = np.load(deconv_path)
         return data['sample'], data['signal_t']
 
@@ -308,12 +349,22 @@ class EventProcessor:
     def read_signal_reconstruction(self, event_id, i_ch) -> NDArray:
         sigrec_path = self._signal_reconstruction_path(event_id, i_ch)
         if not sigrec_path.exists():
-            raise FileNotFoundError(f"No saved doconvolution for {event_id} event {i_ch} channel")
+            raise FileNotFoundError(f"No saved deconvolution for {event_id} event {i_ch} channel")
         theta_sample = np.load(sigrec_path)
         return theta_sample
+
+    def read_signal_significances(self, event_id: int) -> NDArray:
+        path = self._frame_significance_path(event_id)
+        if not path.exists():
+            raise FileNotFoundError(f"No saved significances for {event_id} event")
+        data = np.load(path)
+        return data
 
 
 if __name__ == "__main__":
     processor = EventProcessor(N=45, verbosity=3)
-    processor(Event(10675))
-    processor(Event(10687))
+
+    # processor(Event(10675))
+
+    processor(Event(10685))
+    # processor(Event(10687))

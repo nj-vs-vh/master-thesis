@@ -27,7 +27,9 @@ def plot_signal_in_channel(event: Event, i_ch: int, filename=None, **signal_in_c
     return fig, ax
 
 
-def plot_signals_frame(event: Event, filename=None, fig_ax=None, **signal_in_channel_kwargs):
+def plot_signals_frame(
+    event: Event, filename=None, plot_frame_center=False, fig_ax=None, **signal_in_channel_kwargs
+):
     if fig_ax is None:
         show = True
         fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
@@ -54,6 +56,8 @@ def plot_signals_frame(event: Event, filename=None, fig_ax=None, **signal_in_cha
     mesh = ax.pcolormesh(channel_i, common_t, signals, shading='nearest')
     cbar = plt.colorbar(mesh)
     cbar.set_label('Приведённые единицы')
+    if plot_frame_center:
+        ax.axhline(event.estimated_frame_center, color='red')
 
     ax.set_xticks([1, 30, 60, 90, 109])
     ax.set_ylabel(TIME_LABEL)
@@ -139,7 +143,7 @@ def plot_fov(fov: PmtFov, filename=None):
 
     for i_ch, chax in zip([0, 13, 100], channel_axes):
         cut_edges = 4
-        center_region_coords = np.arange(fov.side / cut_edges, fov.side * (cut_edges-1) / cut_edges, dtype=int)
+        center_region_coords = np.arange(fov.side / cut_edges, fov.side * (cut_edges - 1) / cut_edges, dtype=int)
         ch_fov = np.squeeze(fov.FOV[i_ch, center_region_coords, :])
         ch_fov = ch_fov[:, center_region_coords]
         chax.imshow(ch_fov, vmax=image_max, cmap=COLORMAP)
@@ -148,16 +152,10 @@ def plot_fov(fov: PmtFov, filename=None):
         chax.set_xticks([])
         chax.set_yticks([])
 
-        arrow_start = fig.transFigure.inverted().transform(
-            ax.transData.transform(fov.FOVc[i_ch, :])
-        )
-        arrow_end = fig.transFigure.inverted().transform(
-            chax.transAxes.transform((0.5, -0.05))
-        )
+        arrow_start = fig.transFigure.inverted().transform(ax.transData.transform(fov.FOVc[i_ch, :]))
+        arrow_end = fig.transFigure.inverted().transform(chax.transAxes.transform((0.5, -0.05)))
         arrow_start = arrow_end + (arrow_start - arrow_end) * (1 - 0.015)
-        fig.add_artist(
-            lines.Line2D([arrow_start[0], arrow_end[0]], [arrow_start[1], arrow_end[1]], c=[0.3] * 3)
-        )
+        fig.add_artist(lines.Line2D([arrow_start[0], arrow_end[0]], [arrow_start[1], arrow_end[1]], c=[0.3] * 3))
         chax.set_title('#' + str(i_ch + 1))
 
     _save_or_show(filename)

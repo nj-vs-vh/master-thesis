@@ -12,26 +12,23 @@ from modules.experiment.events import Event, EventProcessor
 
 def plot_signal_reconstruction(event: Event, processor: EventProcessor):
     fig = plt.figure(figsize=Figsize.TWOPANEL_VERT.value)
-    gs = plt.GridSpec(ncols=1, nrows=5, height_ratios=[4, 4, 1, 1, 1], figure=fig)
-    # [ax_orig, ax_deconv, ax_n_eas, ax_t_mean, ax_sigma_t] = gs.subplots(sharex=True)
+    gs = plt.GridSpec(ncols=1, nrows=5, height_ratios=[4, 4, 2, 2, 2], figure=fig)
 
     ax_orig = fig.add_subplot(gs[0])
     plot_signals_frame(event, fig_ax=(fig, ax_orig), window=processor.N)
-    ax_orig.set_xticklabels([])
+    # ax_orig.set_xticklabels([])
     ax_orig.set_xlabel('')
 
-    ax_deconv = fig.add_subplot(gs[1])
+    ax_deconv = fig.add_subplot(gs[1], sharex=ax_orig)
     deconv_frame, signal_t, channels = processor.read_deconv_frame(event.id_)
     mesh = ax_deconv.pcolormesh(channels, signal_t, deconv_frame, shading='nearest')
     cbar = plt.colorbar(mesh)
     cbar.set_label('$n_{{ph.el}}$')
-    ax_deconv.set_xticks([1, 30, 60, 90, 109])
     ax_deconv.set_ylabel(TIME_LABEL)
-    ax_deconv.set_xlabel(CHANNEL_NO_LABEL)
 
-    ax_n_eas = fig.add_subplot(gs[2])
-    ax_t_mean = fig.add_subplot(gs[3])
-    ax_sigma_t = fig.add_subplot(gs[4])
+    ax_n_eas = fig.add_subplot(gs[2], sharex=ax_orig)
+    ax_t_mean = fig.add_subplot(gs[3], sharex=ax_orig)
+    ax_sigma_t = fig.add_subplot(gs[4], sharex=ax_orig)
 
     channels_with_signals = []
     n_eas = []  # two columns: value and it's std error
@@ -48,13 +45,46 @@ def plot_signal_reconstruction(event: Event, processor: EventProcessor):
         for storage, i_dim in zip([n_eas, t_mean, sigma_t], range(3)):
             storage.append([theta_mean[i_dim], theta_std[i_dim]])
 
-    for storage, ax in zip([n_eas, t_mean, sigma_t], [ax_n_eas, ax_t_mean, ax_sigma_t]):
+    _, _, ref_width, _ = ax_orig.get_position().bounds
+
+    channels_with_signals = np.array(channels_with_signals)
+    signal_significances = processor.read_signal_significances(event.id_)
+    signal_significances = signal_significances[channels_with_signals]
+    STRONG_SIGNIFICANCE = 6
+    weak_mask = np.logical_and(signal_significances > 0, signal_significances <= STRONG_SIGNIFICANCE)
+    strong_mask = signal_significances > STRONG_SIGNIFICANCE
+
+    for storage, ax, ylabel in zip(
+        [n_eas, t_mean, sigma_t],
+        [ax_n_eas, ax_t_mean, ax_sigma_t],
+        ['$n_{{EAS}}$', '$\\mu_t$, бин', '$\\sigma_t$, бин'],
+    ):
         storage = np.array(storage)
-        ax.errorbar(channels_with_signals, storage[:, 0], yerr=storage[:, 1])
+        ax.errorbar(
+            channels_with_signals[strong_mask] + 1,
+            storage[strong_mask, 0],
+            yerr=storage[strong_mask, 1],
+            fmt='.',
+            color=Color.THETA.value,
+        )
+        ax.errorbar(
+            channels_with_signals[weak_mask] + 1,
+            storage[weak_mask, 0],
+            yerr=storage[weak_mask, 1],
+            fmt='.',
+            color=Color.THETA.value,
+            alpha=0.3,
+        )
         ax.set_xlim(0, 109)
+        ax.set_ylabel(ylabel)
+        left, bottom, _, height = ax.get_position().bounds
+        ax.set_position([left, bottom, ref_width, height])
+
+    ax.set_xticks([1, 30, 60, 90, 109])
+    ax.set_xlabel(CHANNEL_NO_LABEL)
 
     _save_or_show(None)
-    return fig, [ax_orig, ax_deconv]
+    return fig, [ax_orig, ax_deconv, ax_n_eas, ax_t_mean, ax_sigma_t]
 
 
 def plot_theta_sample(
