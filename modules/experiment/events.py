@@ -27,10 +27,6 @@ SignalPerChannel = NDArray[(N_CHANNELS, SIGNAL_LENGTH), float]
 Signal = NDArray[(SIGNAL_LENGTH,), float]
 
 
-class BrokenChannelException(Exception):
-    pass
-
-
 class Event:
     """Experimental event with all its aspects (frame, mean current, calibration) stored together"""
 
@@ -98,7 +94,7 @@ class Event:
         if not 0 <= i_ch < N_CHANNELS:
             raise ValueError(f"Invalid channel no: {i_ch}, must be from 0 to {N_CHANNELS - 1}")
         if i_ch in self.BROKEN_CHANNELS:
-            raise BrokenChannelException(f"Channel {i_ch} is broken")
+            raise ValueError(f"Channel {i_ch} is broken")
 
     # Data reading methods #
 
@@ -172,7 +168,7 @@ class EventProcessor:
 
                     np.savez(deconvolution_result_path, signal_t=signal_t, sample=sample)
                     self.log(f'Channel #{i_ch} deconvolution results saved', 2)
-                except BrokenChannelException:
+                except ValueError:
                     continue
                 except ValueError:
                     self.log(f"Error while processing channel {i_ch}! Moving on...")
@@ -287,7 +283,7 @@ class EventProcessor:
 
         return mcmc.extract_independent_sample(result.sampler, tau_override=tau)
 
-    # convinience functions for reading temp data
+    # convinience functions for reading temp data #
 
     def read_deconv_result(self, event_id, i_ch):
         deconv_path = self._deconvolution_result_path(event_id, i_ch)
@@ -303,11 +299,11 @@ class EventProcessor:
         nan_signal[:] = np.nan
         for i_ch in channels:
             try:
-                sample, _ = self.read_deconv_result(event_id, i_ch)
+                sample, signal_t = self.read_deconv_result(event_id, i_ch)
                 frame.append(sample.mean(axis=0))
             except FileNotFoundError:
                 frame.append(nan_signal)
-        return np.array(frame).T, channels
+        return np.array(frame).T, signal_t, channels
 
     def read_signal_reconstruction(self, event_id, i_ch) -> NDArray:
         sigrec_path = self._signal_reconstruction_path(event_id, i_ch)

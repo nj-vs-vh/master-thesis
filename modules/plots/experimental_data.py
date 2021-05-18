@@ -5,7 +5,7 @@ import matplotlib.lines as lines
 
 from ._shared import TIME_LABEL, Figsize, Color, _save_or_show
 
-from ..experiment.events import Event, BrokenChannelException
+from ..experiment.events import Event
 from ..experiment.fov import PmtFov
 
 
@@ -27,8 +27,13 @@ def plot_signal_in_channel(event: Event, i_ch: int, filename=None, **signal_in_c
     return fig, ax
 
 
-def plot_signals_frame(event: Event, filename=None, **signal_in_channel_kwargs):
-    fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
+def plot_signals_frame(event: Event, filename=None, fig_ax=None, **signal_in_channel_kwargs):
+    if fig_ax is None:
+        show = True
+        fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
+    else:
+        show = False
+        fig, ax = fig_ax
 
     common_t = None
     channel_i = np.arange(0, 109)
@@ -38,7 +43,7 @@ def plot_signals_frame(event: Event, filename=None, **signal_in_channel_kwargs):
             t, signal, adc_step = event.signal_in_channel(i_ch=i_ch, **signal_in_channel_kwargs)
             common_t = t
             signals.append(signal + adc_step)
-        except BrokenChannelException:
+        except ValueError:
             nan_signal = np.zeros_like(signal)
             nan_signal[:] = np.nan
             signals.append(nan_signal)
@@ -54,7 +59,8 @@ def plot_signals_frame(event: Event, filename=None, **signal_in_channel_kwargs):
     ax.set_ylabel(TIME_LABEL)
     ax.set_xlabel(CHANNEL_NO_LABEL)
 
-    _save_or_show(filename)
+    if show:
+        _save_or_show(filename)
     return fig, ax
 
 
