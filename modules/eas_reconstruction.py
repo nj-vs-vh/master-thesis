@@ -6,49 +6,8 @@ import numpy as np
 from scipy.optimize import curve_fit
 from numba import njit
 
-from typing import Literal
-
 import modules.mcmc as mcmc
-from modules.experiment.events import Event, EventProcessor
-from modules.experiment.fov import PmtFov
 from modules.utils import angle_between, norm_cdf, apply_mask
-
-
-def get_data_on_plane(
-    event: Event, processor: EventProcessor, parameter: Literal, min_signal_significance: float = 6.0
-):
-    fov = PmtFov.for_event(event.id_)
-    param_samples, has_signal = processor.read_reconstruction_marginal_sample_per_channel(
-        event.id_, parameter=parameter
-    )
-    significant = processor.read_signal_significances(event.id_)[has_signal] > min_signal_significance
-
-    return (
-        fov.x[has_signal][significant],
-        fov.y[has_signal][significant],
-        param_samples.mean(axis=0)[significant],
-        param_samples.std(axis=0)[significant],
-    )
-
-
-def get_arrival_times(event: Event, processor: EventProcessor, min_signal_significance: float = 6.0):
-    fov = PmtFov.for_event(event.id_)
-
-    t_samples, has_signal = processor.read_reconstruction_marginal_sample_per_channel(event.id_, parameter='t')
-    t_samples = t_samples * 12.5  # bin -> ns
-
-    time_delays_ns = fov.delays(H=event.height)[has_signal]
-    t_samples -= time_delays_ns
-    t_samples -= t_samples.mean()
-
-    significant = processor.read_signal_significances(event.id_)[has_signal] > min_signal_significance
-
-    return (
-        fov.x[has_signal][significant],
-        fov.y[has_signal][significant],
-        t_samples.mean(axis=0)[significant],
-        t_samples.std(axis=0)[significant],
-    )
 
 
 def arrival_time_plane(xdata, theta, phi, z00):

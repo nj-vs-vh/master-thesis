@@ -15,6 +15,7 @@ import modules.mcmc as mcmc
 import modules.signal_reconstruction as sigrec
 import modules.eas_reconstruction as eas
 from modules.utils import apply_mask
+from modules.experiment.fov import PmtFov
 
 
 CUR_DIR = Path(__file__).parent
@@ -356,12 +357,8 @@ class EventProcessor:
         x, y, theta, phi = np.load(path)
         return x, y, theta, phi
 
-    def reconstruct_eas_angle(self, event) -> Tuple[float, float, NDArray]:
-        acceptable_plane_jitter = 0.1  # degrees
-
-        x_fov, y_fov, t_means, t_stds = eas.get_arrival_times(
-            event, self, min_signal_significance=self.min_signal_significance
-        )
+    def reconstruct_eas_angle(self, event: Event) -> Tuple[float, float, NDArray]:
+        x_fov, y_fov, t_means, t_stds = self.get_arrival_times(event)
         self.log(f'{len(x_fov)} points with significance>{self.min_signal_significance}', 2)
 
         popt, perr, inplane_mask = eas.adaptive_excluding_fit(
@@ -369,20 +366,18 @@ class EventProcessor:
             y_fov,
             t_means,
             t_stds,
-            acceptable_angle_between=acceptable_plane_jitter,
+            acceptable_angle_between=0.1,
             absolute_distance_exclusion=True,
         )
 
         self.log(f'{np.sum(inplane_mask)} points left in fit after exclusion', 2)
 
         theta_opt, phi_opt = popt[:2]
-        # theta_err, phi_err = popt[:2]  # not needed for now
+        theta_err, phi_err = popt[:2]  # not needed for now
         return theta_opt, phi_opt, inplane_mask
 
-    def reconstruct_eas_axis_pos(self, event, inplane_mask):
-        x_fov, y_fov, n_means, n_stds = eas.get_data_on_plane(
-            event, self, parameter='n', min_signal_significance=self.min_signal_significance
-        )
+    def reconstruct_eas_axis_pos(self, event: Event, inplane_mask: NDArray):
+        x_fov, y_fov, n_means, n_stds = self.get_parameter_values_on_plane(event.id_, parameter='n')
 
         logprior, loglike = eas.get_axis_position_logprior_and_loglike(
             *apply_mask(x_fov, y_fov, n_means, n_stds, mask=inplane_mask)
@@ -416,7 +411,7 @@ class EventProcessor:
 
         return axis_xy_sample[i_max_in_sample, :]
 
-    # convinience functions for reading temp data #
+    # temp data reading functions #
 
     def read_deconv_result(self, event_id, i_ch):
         deconv_path = self._deconvolution_result_path(event_id, i_ch)
@@ -460,6 +455,37 @@ class EventProcessor:
             channels_with_signals.append(i_ch)
             param_samples.append(theta_sample[:, parameter_i])
         return np.array(param_samples).T, np.array(channels_with_signals)
+
+    def get_parameter_values_on_plane(self, event_id: int, parameter: Literal):
+        fov = PmtFov.for_event(event_id)
+        param_samples, has_signal = self.read_reconstruction_marginal_sample_per_channel(event_id, parameter=parameter)
+        significant = self.read_signal_significances(event_id)[has_signal] > self.min_signal_significance
+
+        return (
+            fov.x[has_signal][significant],
+            fov.y[has_signal][significant],
+            param_samples.mean(axis=0)[significant],
+            param_samples.std(axis=0)[significant],
+        )
+
+    def get_arrival_times(self, event: Event):
+        fov = PmtFov.for_event(event.id_)
+
+        t_samples, has_signal = self.read_reconstruction_marginal_sample_per_channel(event.id_, parameter='t')
+        t_samples = t_samples * 12.5  # bin -> ns
+
+        time_delays_ns = fov.delays(H=event.height)[has_signal]
+        t_samples -= time_delays_ns
+        t_samples -= t_samples.mean()
+
+        significant = self.read_signal_significances(event.id_)[has_signal] > self.min_signal_significance
+
+        return (
+            fov.x[has_signal][significant],
+            fov.y[has_signal][significant],
+            t_samples.mean(axis=0)[significant],
+            t_samples.std(axis=0)[significant],
+        )
 
     def read_signal_significances(self, event_id: int) -> NDArray:
         path = self._frame_significance_path(event_id)
