@@ -66,12 +66,10 @@ def enforce_bounds(logprob, n_vec_center, upper_bound_factor: int = 100):
 
 @njit
 def norm_cdf(x, mu, sigma):
-    return np.array(
-        [
-            0.5 * (1 + erf((x_i - mu) / (sigma * 1.41421356237)))
-            for x_i in x
-        ]
-    )
+    cdf = np.zeros_like(x)
+    for i, x_i in enumerate(x):
+        cdf[i] = 0.5 * (1 + erf((x_i - mu) / (sigma * 1.41421356237)))
+    return cdf
 
 
 @njit
@@ -84,3 +82,18 @@ def poisson_pmf(k: NDArray[(Any), float], lmb: float):
 
 
 # print(poisson_pmf(np.array([1, -10000], dtype=float), 4))
+
+
+def angle_between(theta1, phi1, theta2, phi2):
+    """Angle between unit vectors with corresponding theta and phi angles"""
+    chord = np.sqrt(
+        (np.cos(theta1) - np.cos(theta2)) ** 2  # delta Z
+        + (np.sin(theta1) * np.sin(phi1) - np.sin(theta2) * np.sin(phi2)) ** 2  # delta Y
+        + (np.sin(theta1) * np.cos(phi1) - np.sin(theta2) * np.cos(phi2)) ** 2  # delta X
+    )
+    return 2 * np.arcsin(chord / 2)
+
+
+def apply_mask(*numpy_arrays, mask=NDArray[(Any,), bool]):
+    """mask is True -> element is kept, not masked (slicing convention but I like to call it masking, sorry)"""
+    return tuple(arr[mask] for arr in numpy_arrays)

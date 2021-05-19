@@ -13,6 +13,8 @@ from modules.experiment.rir import get_rireffs
 from modules.randomized_ir import RandomizedIr
 import modules.mcmc as mcmc
 import modules.signal_reconstruction as sigrec
+import modules.eas_reconstruction as eas
+from modules.utils import apply_mask
 
 
 CUR_DIR = Path(__file__).parent
@@ -151,11 +153,20 @@ class EventProcessor:
     TEMP_DATA_DIR = (CUR_DIR / '../../temp-data').resolve()
     DECONV_RESULTS_DIR = TEMP_DATA_DIR / 'deconvolution-results'
     SIGREC_DIR = TEMP_DATA_DIR / 'signal-reconstruction'
+    EAS_PARAMS_DIR = TEMP_DATA_DIR / 'eas-geometry'
 
-    def __init__(self, N: int = 45, verbosity: int = 1, preliminary_run_length: int = 10 ** 4, load_rir: bool = True):
+    def __init__(
+        self,
+        N: int = 45,
+        verbosity: int = 1,
+        preliminary_run_length: int = 10 ** 4,
+        load_rir: bool = True,
+        min_signal_significance: float = 4.0,
+    ):
         self.verbosity = verbosity
         self.N = N
         self.preliminary_run_length = preliminary_run_length
+        self.min_signal_significance = min_signal_significance
         if load_rir:
             self.ham_rireff, self.feu84_rireff = get_rireffs(N)
 
@@ -233,6 +244,13 @@ class EventProcessor:
                     significances.append(-100)
             np.save(frame_sign_path, np.array(significances))
             self.log('Significances saved')
+
+        try:
+            x, y, theta, phi = self.read_eas_geometry(event.id_)
+        except FileNotFoundError:
+            theta, phi, inplane_mask = self.reconstruct_eas_angle(event)
+            x, y = self.reconstruct_eas_axis_pos(event, inplane_mask=inplane_mask)
+            np.save(self._eas_geometry_path(event.id_), np.array([x, y, theta, phi]))
 
     # DECONVOLUTION #
 
@@ -325,6 +343,79 @@ class EventProcessor:
 
         return mcmc.extract_independent_sample(result.sampler, tau_override=tau)
 
+    # EAS parameters reconstruction #
+    # NOTE: these methods return only max-likelihood estimations for now, no errors!
+
+    def _eas_geometry_path(self, event_id: int) -> Path:
+        return self.EAS_PARAMS_DIR / f"{event_id}.eas.npy"
+
+    def read_eas_geometry(self, event_id: int):
+        path = self._eas_geometry_path(event_id)
+        if not path.exists():
+            raise FileNotFoundError(f"No saved reconstructed EAS geometry for {event_id} event")
+        x, y, theta, phi = np.load(path)
+        return x, y, theta, phi
+
+    def reconstruct_eas_angle(self, event) -> Tuple[float, float, NDArray]:
+        acceptable_plane_jitter = 0.1  # degrees
+
+        x_fov, y_fov, t_means, t_stds = eas.get_arrival_times(
+            event, self, min_signal_significance=self.min_signal_significance
+        )
+        self.log(f'{len(x_fov)} points with significance>{self.min_signal_significance}', 2)
+
+        popt, perr, inplane_mask = eas.adaptive_excluding_fit(
+            x_fov,
+            y_fov,
+            t_means,
+            t_stds,
+            acceptable_angle_between=acceptable_plane_jitter,
+            absolute_distance_exclusion=True,
+        )
+
+        self.log(f'{np.sum(inplane_mask)} points left in fit after exclusion', 2)
+
+        theta_opt, phi_opt = popt[:2]
+        # theta_err, phi_err = popt[:2]  # not needed for now
+        return theta_opt, phi_opt, inplane_mask
+
+    def reconstruct_eas_axis_pos(self, event, inplane_mask):
+        x_fov, y_fov, n_means, n_stds = eas.get_data_on_plane(
+            event, self, parameter='n', min_signal_significance=self.min_signal_significance
+        )
+
+        logprior, loglike = eas.get_axis_position_logprior_and_loglike(
+            *apply_mask(x_fov, y_fov, n_means, n_stds, mask=inplane_mask)
+        )
+
+        def logposterior(ax):
+            logp = logprior(ax)
+            return logp if np.isinf(logp) else logp + loglike(ax)
+
+        n_walkers = 512
+        sigma_estimation = 3
+        i_max_ch = np.argmax(n_means[inplane_mask])
+        max_ch_xy = np.array([x_fov[inplane_mask][i_max_ch], y_fov[inplane_mask][i_max_ch]]).reshape(1, 2)
+        init_point = np.tile(max_ch_xy, (n_walkers, 1)) + np.random.normal(scale=sigma_estimation, size=(n_walkers, 2))
+
+        tau = 200
+        result = mcmc.run_mcmc(
+            logposterior=logposterior,
+            init_point=init_point,
+            config=mcmc.SamplingConfig(
+                n_walkers=n_walkers,
+                n_samples=10 * tau,
+                starting_points_strategy='given',
+                progress_bar=True,
+                autocorr_estimation_each=500,
+                debug_acceptance_fraction_each=1000,
+            ),
+        )
+        axis_xy_sample = mcmc.extract_independent_sample(result.sampler, tau_override=tau, debug=True)
+        i_max_in_sample = np.argmax(np.array([loglike(axis_xy) for axis_xy in axis_xy_sample]))
+
+        return axis_xy_sample[i_max_in_sample, :]
+
     # convinience functions for reading temp data #
 
     def read_deconv_result(self, event_id, i_ch):
@@ -381,7 +472,7 @@ class EventProcessor:
 if __name__ == "__main__":
     processor = EventProcessor(N=45, verbosity=3)
 
-    # processor(Event(10675))
+    processor(Event(10675))
 
-    processor(Event(10685))
+    # processor(Event(10685))
     # processor(Event(10687))

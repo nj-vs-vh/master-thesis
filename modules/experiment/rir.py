@@ -106,7 +106,7 @@ def get_rireffs(N: int) -> Tuple[RandomizedIrEffect, RandomizedIrEffect]:
     ir_t, ir_shape = read_ir_shape()
     ir_t, ir_shape = cut_ir_shape(ir_t, ir_shape, excluded_integral_percentile=0.02)  # fine-tuned for reasonable length
 
-    samplesize = 10 ** 7
+    samplesize = 10 ** 5
 
     rir = RandomizedIr(ir_x=ir_t, ir_y=ir_shape, factor=generate_C_pmt)
     rireff = RandomizedIrEffect(rir, N, samplesize=samplesize)
