@@ -6,6 +6,9 @@ import numpy as np
 from scipy.optimize import curve_fit
 from numba import njit
 
+from typing import Tuple
+from nptyping import NDArray
+
 import modules.mcmc as mcmc
 from modules.utils import angle_between, norm_cdf, apply_mask
 
@@ -138,3 +141,15 @@ def estimate_axis_position(x_fov, y_fov, n_means, n_stds, in_fit_mask):
     i_max_in_sample = np.argmax(np.array([loglike(axis_xy) for axis_xy in axis_xy_sample]))
 
     return axis_xy_sample[i_max_in_sample, :]
+
+
+def project_on_shower_plane(x: NDArray, y: NDArray, theta: float, phi: float) -> Tuple[NDArray, NDArray]:
+    r_d = np.sqrt(x ** 2 + y ** 2)
+    phi_d = np.arctan(y / x)
+    phi_d[x < 0] += np.pi
+    phi_d[np.logical_and(x > 0, y < 0)] += 2 * np.pi
+
+    eta = np.pi / 2 - (phi - phi_d)
+    x_pl = - r_d * np.cos(eta)
+    y_pl = - r_d * np.sin(eta) * np.cos(theta)
+    return x_pl, y_pl
