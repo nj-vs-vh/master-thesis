@@ -10,7 +10,7 @@ from modules.plots._shared import Color, Figsize, _save_or_show, TIME_LABEL
 from modules.experiment.events import Event, EventProcessor
 
 
-def plot_signal_reconstruction(event: Event, processor: EventProcessor):
+def plot_signal_reconstruction(event: Event, processor: EventProcessor, filename: Optional[str] = None):
     fig = plt.figure(figsize=Figsize.TWOPANEL_VERT.value)
     gs = plt.GridSpec(ncols=1, nrows=5, height_ratios=[4, 4, 2, 2, 2], figure=fig)
 
@@ -21,7 +21,7 @@ def plot_signal_reconstruction(event: Event, processor: EventProcessor):
 
     ax_deconv = fig.add_subplot(gs[1], sharex=ax_orig)
     deconv_frame, signal_t, channels = processor.read_deconv_frame(event.id_)
-    mesh = ax_deconv.pcolormesh(channels, signal_t, deconv_frame, shading='nearest')
+    mesh = ax_deconv.pcolormesh(1 + channels, signal_t, deconv_frame, shading='nearest')
     cbar = plt.colorbar(mesh)
     cbar.set_label('$n_{{ph.el}}$')
     ax_deconv.set_ylabel(TIME_LABEL)
@@ -50,7 +50,7 @@ def plot_signal_reconstruction(event: Event, processor: EventProcessor):
     channels_with_signals = np.array(channels_with_signals)
     signal_significances = processor.read_signal_significances(event.id_)
     signal_significances = signal_significances[channels_with_signals]
-    STRONG_SIGNIFICANCE = 6
+    STRONG_SIGNIFICANCE = 4
     weak_mask = np.logical_and(signal_significances > 0, signal_significances <= STRONG_SIGNIFICANCE)
     strong_mask = signal_significances > STRONG_SIGNIFICANCE
 
@@ -83,12 +83,15 @@ def plot_signal_reconstruction(event: Event, processor: EventProcessor):
     ax.set_xticks([1, 30, 60, 90, 109])
     ax.set_xlabel(CHANNEL_NO_LABEL)
 
-    _save_or_show(None)
+    _save_or_show(filename)
     return fig, [ax_orig, ax_deconv, ax_n_eas, ax_t_mean, ax_sigma_t]
 
 
 def plot_theta_sample(
-    theta_sample: NDArray, n_sigmas_cut: Optional[float] = None, cut_along: Optional[List[bool]] = None
+    theta_sample: NDArray,
+    n_sigmas_cut: Optional[float] = None,
+    cut_along: Optional[List[bool]] = None,
+    filename: Optional[str] = None,
 ):
     if n_sigmas_cut is not None:
         if cut_along is None:
@@ -118,3 +121,5 @@ def plot_theta_sample(
             'histtype': 'bar',
         },
     )
+
+    _save_or_show(filename)

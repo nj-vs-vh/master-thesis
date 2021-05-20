@@ -88,6 +88,10 @@ def get_signal_reconstruction_loglike(
         log_p = 0
         for pmf_in_bin in pmfs.T:
             log_p += np.log(np.mean(pmf_in_bin))
+        # p_mean = 0
+        # for pmf_rlz in pmfs:
+        #     p_mean += np.prod(pmf_rlz)
+        # log_p = np.log(p_mean / pmf_rlz.shape[0])
         return log_p if not np.isnan(log_p) else -np.inf
 
     if njitted:

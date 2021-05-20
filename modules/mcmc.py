@@ -160,7 +160,7 @@ def extract_independent_sample(
         print(f'Burn-in = {burnin} samples')
         print(f'Thinning = {thin} samples')
 
-    min_number_of_burnins_in_chain = 2
+    min_number_of_burnins_in_chain = 1.5
     if min_number_of_burnins_in_chain * burnin > sampler.iteration:
         raise ValueError(
             f"Chain seems too short! Length is {sampler.iteration}, but must be at least "
@@ -177,6 +177,9 @@ def extract_independent_sample(
                 + f"only {independent_sample.shape[0]} are available. "
                 + "Lower desired_sample_size or increase n_samples parameter to get long enough chain."
             )
+
+    if debug:
+        print(f'Resulting sample size = {independent_sample.shape[0]}')
 
     return independent_sample
 

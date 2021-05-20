@@ -15,6 +15,7 @@ TIME_LABEL = 'Время, бины'
 
 class Figsize(Enum):
     SMALL = (4, 4)
+    SMALL_HORIZ = (7, 4)
     NORMAL = (7, 5)
     TWOPANEL_VERT = (7, 10)
     TRIPANEL_HORIZ = (7, 2)
