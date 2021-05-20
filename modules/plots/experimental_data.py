@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as scint
 import matplotlib.lines as lines
 
+from nptyping import NDArray
+
 from ._shared import TIME_LABEL, Figsize, Color, _save_or_show
 
 from ..experiment.events import Event
@@ -27,9 +29,7 @@ def plot_signal_in_channel(event: Event, i_ch: int, filename=None, **signal_in_c
     return fig, ax
 
 
-def plot_signals_frame(
-    event: Event, filename=None, plot_frame_center=False, fig_ax=None, **signal_in_channel_kwargs
-):
+def plot_signals_frame(event: Event, filename=None, plot_frame_center=False, fig_ax=None, **signal_in_channel_kwargs):
     if fig_ax is None:
         show = True
         fig, ax = plt.subplots(figsize=Figsize.NORMAL.value)
@@ -68,18 +68,16 @@ def plot_signals_frame(
     return fig, ax
 
 
-def plot_fov(fov: PmtFov, filename=None):
-    # fig, axd = plt.subplot_mosaic(
-    #     """
-    #     ABCD
-    #     EEED
-    #     """,
-    #     figsize=Figsize.TWOPANEL_VERT.value
-    # )
-    # ax = axd['E']
-    # colormap_ax = axd['D']
-    # channel_axes = [axd['A'], axd['B'], axd['C']
-
+def plot_fov(
+    fov: PmtFov,
+    x_label: str = '$x_{{\\mathrm{{запад-восток}}}}$, м',
+    y_label: str = '$y_{{\\mathrm{{юг-север}}}}$, м',
+    origin_label: str = 'Проекция установки',
+    cut_edges: int = 4,
+    draw_arrows: bool = True,
+    arrows_finetuning: NDArray = np.array([0, 0]),
+    filename=None,
+):
     fig = plt.figure(figsize=(7, 8.5))
     gs = plt.GridSpec(ncols=4, nrows=2, width_ratios=[1, 1, 1, 0.15], height_ratios=[1, 4], hspace=0.05, figure=fig)
     ax = fig.add_subplot(gs[1, 0:3])
@@ -88,7 +86,8 @@ def plot_fov(fov: PmtFov, filename=None):
     channel_axes[0].set_anchor('W')
     channel_axes[-1].set_anchor('E')
 
-    fov_local_grid = np.arange(fov.side) - fov.side / 2
+    # fov_local_grid = np.arange(fov.side) - fov.side / 2
+    fov_local_grid = fov.grid() / fov.step
 
     # ported from print_FOV.m
 
@@ -127,7 +126,7 @@ def plot_fov(fov: PmtFov, filename=None):
     )
 
     ax.scatter(fov.FOVc[:, 0], fov.FOVc[:, 1], 10, 'b', marker='.', label='Центры полей зрения')
-    ax.scatter(0, 0, 200, 'k', marker='+', label='Проекция установки')
+    ax.scatter(0, 0, 200, 'k', marker='+', label=origin_label)
     ax.set_anchor('S')
 
     cbar = plt.colorbar(plotted_img, cax=colormap_ax)
@@ -135,14 +134,13 @@ def plot_fov(fov: PmtFov, filename=None):
     cbar_ticks = np.linspace(0.0, cbar_max, 5)
     cbar.set_ticks(cbar_ticks)
     cbar.set_label('Коэффициент сбора')
-    ax.set_xlabel('$x_{{\\mathrm{{запад-восток}}}}$, м')
-    ax.set_ylabel('$y_{{\\mathrm{{юг-север}}}}$, м')
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
     ax.legend(loc='lower left')
 
     # plotting single channel fovs #
 
     for i_ch, chax in zip([0, 13, 100], channel_axes):
-        cut_edges = 4
         center_region_coords = np.arange(fov.side / cut_edges, fov.side * (cut_edges - 1) / cut_edges, dtype=int)
         ch_fov = np.squeeze(fov.FOV[i_ch, center_region_coords, :])
         ch_fov = ch_fov[:, center_region_coords]
@@ -152,11 +150,14 @@ def plot_fov(fov: PmtFov, filename=None):
         chax.set_xticks([])
         chax.set_yticks([])
 
-        arrow_start = fig.transFigure.inverted().transform(ax.transData.transform(fov.FOVc[i_ch, :]))
-        arrow_end = fig.transFigure.inverted().transform(chax.transAxes.transform((0.5, -0.05)))
-        arrow_start = arrow_end + (arrow_start - arrow_end) * (1 - 0.015)
-        fig.add_artist(lines.Line2D([arrow_start[0], arrow_end[0]], [arrow_start[1], arrow_end[1]], c=[0.3] * 3))
         chax.set_title('#' + str(i_ch + 1))
+        if draw_arrows:
+            arrow_start = fig.transFigure.inverted().transform(
+                ax.transData.transform(fov.FOVc[i_ch, :] + arrows_finetuning)
+            )
+            arrow_end = fig.transFigure.inverted().transform(chax.transAxes.transform((0.5, -0.05)))
+            arrow_start = arrow_end + (arrow_start - arrow_end) * (1 - 0.015)
+            fig.add_artist(lines.Line2D([arrow_start[0], arrow_end[0]], [arrow_start[1], arrow_end[1]], c=[0.3] * 3))
 
     _save_or_show(filename)
 

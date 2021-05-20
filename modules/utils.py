@@ -97,3 +97,8 @@ def angle_between(theta1, phi1, theta2, phi2):
 def apply_mask(*numpy_arrays, mask=NDArray[(Any,), bool]):
     """mask is True -> element is kept, not masked (slicing convention but I like to call it masking, sorry)"""
     return tuple(arr[mask] for arr in numpy_arrays)
+
+
+def concat_vectors_as_cols(v1: NDArray, v2: NDArray) -> NDArray:
+    n = v1.size
+    return np.concatenate((v1.reshape(n, 1), v2.reshape(n, 1)), axis=1)

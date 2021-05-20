@@ -34,6 +34,21 @@ class PmtFov:
         # but seems like now it's always 5..?
         self.step = 300 / (self.side - 1)
 
+    @property
+    def x(self) -> NDArray[(N_CHANNELS,), float]:
+        return self.FOVc[:, 0]
+
+    @property
+    def y(self) -> NDArray[(N_CHANNELS,), float]:
+        return self.FOVc[:, 1]
+
+    @property
+    def r(self) -> NDArray[(N_CHANNELS,), float]:
+        return np.sqrt(self.x ** 2 + self.y ** 2)
+
+    def grid(self) -> NDArray:
+        return self.step * (0.501 + np.arange(self.side) - self.side / 2)
+
     @classmethod
     def default(cls) -> PmtFov:
         """Load default FOV for 1000 m elevation and not inclined detector"""
@@ -49,18 +64,6 @@ class PmtFov:
     def delays(self, H) -> NDArray[(N_CHANNELS,), float]:
         """Calculate time delays (in ns) between snow and each channel's PMT"""
         return np.sqrt(H ** 2 + self.r ** 2) / C_LIGHT
-
-    @property
-    def x(self) -> NDArray[(N_CHANNELS,), float]:
-        return self.FOVc[:, 0]
-
-    @property
-    def y(self) -> NDArray[(N_CHANNELS,), float]:
-        return self.FOVc[:, 1]
-
-    @property
-    def r(self) -> NDArray[(N_CHANNELS,), float]:
-        return np.sqrt(self.x ** 2 + self.y ** 2)
 
 
 if __name__ == "__main__":

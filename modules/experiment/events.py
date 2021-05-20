@@ -498,7 +498,7 @@ class EventProcessor:
 if __name__ == "__main__":
     processor = EventProcessor(N=45, verbosity=3)
 
-    processor(Event(10675))
+    # processor(Event(10675))
 
     # processor(Event(10685))
-    # processor(Event(10687))
+    processor(Event(10687))
