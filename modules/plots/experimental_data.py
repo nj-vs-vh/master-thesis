@@ -76,15 +76,19 @@ def plot_fov(
     cut_edges: int = 4,
     draw_arrows: bool = True,
     arrows_finetuning: NDArray = np.array([0, 0]),
+    ax_for_central_img=None,
     filename=None,
 ):
-    fig = plt.figure(figsize=(7, 8.5))
-    gs = plt.GridSpec(ncols=4, nrows=2, width_ratios=[1, 1, 1, 0.15], height_ratios=[1, 4], hspace=0.05, figure=fig)
-    ax = fig.add_subplot(gs[1, 0:3])
-    colormap_ax = fig.add_subplot(gs[:, 3])
-    channel_axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
-    channel_axes[0].set_anchor('W')
-    channel_axes[-1].set_anchor('E')
+    if ax_for_central_img is None:
+        fig = plt.figure(figsize=(7, 8.5))
+        gs = plt.GridSpec(ncols=4, nrows=2, width_ratios=[1, 1, 1, 0.15], height_ratios=[1, 4], hspace=0.05, figure=fig)
+        ax = fig.add_subplot(gs[1, 0:3])
+        colormap_ax = fig.add_subplot(gs[:, 3])
+        channel_axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
+        channel_axes[0].set_anchor('W')
+        channel_axes[-1].set_anchor('E')
+    else:
+        ax = ax_for_central_img
 
     # fov_local_grid = np.arange(fov.side) - fov.side / 2
     fov_local_grid = fov.grid() / fov.step
@@ -127,9 +131,13 @@ def plot_fov(
 
     ax.scatter(fov.FOVc[:, 0], fov.FOVc[:, 1], 10, 'b', marker='.', label='Центры полей зрения')
     ax.scatter(0, 0, 200, 'k', marker='+', label=origin_label)
+
     ax.set_anchor('S')
 
-    cbar = plt.colorbar(plotted_img, cax=colormap_ax)
+    if ax_for_central_img is None:
+        cbar = plt.colorbar(plotted_img, cax=colormap_ax)
+    else:
+        cbar = plt.colorbar(plotted_img)
     cbar_max = (1 + int(image_max * 10 ** 5)) / 10 ** 5
     cbar_ticks = np.linspace(0.0, cbar_max, 5)
     cbar.set_ticks(cbar_ticks)
@@ -137,6 +145,9 @@ def plot_fov(
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.legend(loc='lower left')
+
+    if ax_for_central_img is not None:
+        return
 
     # plotting single channel fovs #
 

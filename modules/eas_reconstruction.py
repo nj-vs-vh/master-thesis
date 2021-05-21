@@ -110,18 +110,19 @@ def get_axis_position_logprior_and_loglike(x, y, n_mean, n_std):
 def estimate_axis_position(x_fov, y_fov, n_means, n_stds, in_fit_mask):
     """Return max-likelihood axis position"""
     logprior, loglike = get_axis_position_logprior_and_loglike(
-        apply_mask(x_fov, y_fov, n_means, n_stds, mask=in_fit_mask)
+        *apply_mask(x_fov, y_fov, n_means, n_stds, mask=in_fit_mask)
     )
 
     def logposterior(ax):
         logp = logprior(ax)
         return logp if np.isinf(logp) else logp + loglike(ax)
 
-    n_walkers = 512
+    n_walkers = 128
     i_max_ch = np.argmax(n_means[in_fit_mask])
     max_ch_xy = np.array([x_fov[in_fit_mask][i_max_ch], y_fov[in_fit_mask][i_max_ch]]).reshape(1, 2)
+    # max_ch_xy = np.array([0, 0], dtype=float)  # test of convergence
 
-    sigma_estimation = 3
+    sigma_estimation = 10
     init_point = np.tile(max_ch_xy, (n_walkers, 1)) + np.random.normal(scale=sigma_estimation, size=(n_walkers, 2))
 
     tau = 200
