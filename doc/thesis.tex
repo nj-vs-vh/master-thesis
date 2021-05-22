@@ -1,6 +1,5 @@
 \documentclass[12pt]{report}
 
-
 \usepackage{lscape}		% Для включения альбомных страниц
 
 \usepackage{amsmath,amsthm,amssymb}  %подгрузка пакетов для корректного и наиболее полного. должен грузиться как можно раньше, т.к. внутри себя определяет шрифты и некоторые прочие настройки, которые несколько не соответствуют тому, что надо.
@@ -11,7 +10,7 @@
 \usepackage{afterpage}  %данный покет вводит команду \afterpage, которая вставляет пустую страницу сразу за страницей, где эта команда встретилась. Удобна для аккуратного расположения иллюстраций в дипломах и диссертациях.
 
 \usepackage[utf8]{inputenc}
-\usepackage[T1,T2A]{fontenc}
+\usepackage[T2A,T1]{fontenc}
 \usepackage{lmodern} % несколько иное начертание латиницы
 
 \usepackage[russian]{babel}
@@ -24,7 +23,10 @@
 \usepackage{setspace}   %пакет позволяет выставлять полуторные интервалы в тексте, но не вмешивается в подписи, таблицы и сноски
 
 
-\usepackage[backend=biber, style=numeric]{biblatex}
+\usepackage[
+	backend=biber,
+	sorting=none,  % в порядке цитирования в тексте
+]{biblatex}
 \addbibresource{thesis.bib}
 
 \usepackage{float}
@@ -49,19 +51,7 @@
 \renewcommand{\labelenumiii}{\arabic{enumi}.\arabic{enumii}.\arabic{enumiii}}
 \renewcommand{\labelenumiv}{\arabic{enumi}.\arabic{enumii}.\arabic{enumiii}.\arabic{enumiv}}
 
-
-% добавка точек после номеров разделов текстов, как того требуют правила
-\renewcommand{\thechapter}{\arabic{chapter}.} 
-\renewcommand{\thesection}{\arabic{chapter}.\arabic{section}.}
-\renewcommand{\thesubsection}{\arabic{chapter}.\arabic{section}.\arabic{subsection}.}
-\renewcommand{\thesubsubsection}{\arabic{chapter}.\arabic{section}.\arabic{subsection}.\arabic{subsubsection}.}
-\renewcommand{\thefigure}{\thechapter\arabic{figure}}
-\renewcommand{\thetable}{\thechapter\arabic{table}}
-\renewcommand{\theequation}{\arabic{chapter}.\arabic{equation}}
-
 \usepackage{hyperref}    %позволяет сделать в полученной PDFке рабочими ссылки как в оглавлении, так и в списке литературы и вообще в тексте
-
-%\hyphenpenalty=10000 %отключаем перенос 
 
 % ./pic is used for dynamically updated images -- python scripts
 % write their output there
@@ -69,26 +59,26 @@
 % and scripts can do whatever they want
 \graphicspath{{./pic/final/} {./pic/external/} {./pic/}}
 
-\setcounter{secnumdepth}{3}
+\setcounter{secnumdepth}{5}
 \newcommand{\cov}{\mathrm{cov}}
 
 
-% Оформление заголовков по требованиям факультета (проверить)
 \usepackage{titlesec}
+% \titlelabel{\thetitle.\quad}
 \titleformat{\chapter}[block]
 {\centering\bfseries\Huge}
-{Глава \thechapter}
-{1ex}{}
+{Глава \thechapter.}
+{1.5ex}{}
 
-\titleformat{\section}
-{\filright\bfseries\Large}
-{\thesection}
-{1ex}{}
+\titleformat{\paragraph}[runin]
+{\hyphenpenalty=10000 \itshape}
+{\theparagraph.}
+{1ex}{}[.]
 
-\titleformat{\subsection}
-{\filright\large}
-{\thesubsection}
-{1ex}{}
+\titleformat{\subparagraph}[runin]
+{}
+{\thesubparagraph.}
+{1ex}{}[.]
 
 \setlength{\parindent}{1.25cm} %настройка отступов
 \sloppy   %убираем висячие строки  и подобное безобразие
@@ -96,7 +86,30 @@
 \widowpenalty=10000		% Запрещаем разрыв страницы перед последней строкой абзаца
 
 
-\title{Байесовская деконволюция для эксперимента СФЕРА-2}
+\usepackage{microtype}
+\SetProtrusion
+{
+	encoding = T2A,
+	family = faq
+}
+{
+	« = {1000,   },
+	» = {  , 1000},
+	„ = {1000,   },
+	“ = {  , 1000},
+	( = {1000,   },
+	) = {  , 1000},
+	! = {  , 1000},
+	? = {  , 1000},
+	: = {  , 1000},
+	; = {  , 1000},
+	. = {  , 1000},
+	- = {  , 500},
+	{,}= {  , 1000}
+}
+
+
+% \title{Байесовская деконволюция для эксперимента СФЕРА-2}
 
 \author{Игорь Вайман}
 
