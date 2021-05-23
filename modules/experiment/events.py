@@ -246,12 +246,12 @@ class EventProcessor:
             np.save(frame_sign_path, np.array(significances))
             self.log('Significances saved')
 
-        # try:
-        #     x, y, theta, phi = self.read_eas_geometry(event.id_)
-        # except FileNotFoundError:
-        #     theta, phi, inplane_mask = self.reconstruct_eas_angle(event)
-        #     x, y = self.reconstruct_eas_axis_pos(event, inplane_mask=inplane_mask)
-        #     np.save(self._eas_geometry_path(event.id_), np.array([x, y, theta, phi]))
+        try:
+            x, y, theta, phi = self.read_eas_geometry(event.id_)
+        except FileNotFoundError:
+            theta, phi, inplane_mask = self.reconstruct_eas_angle(event)
+            x, y = self.reconstruct_eas_axis_pos(event, inplane_mask=inplane_mask)
+            np.save(self._eas_geometry_path(event.id_), np.array([x, y, theta, phi]))
 
     # DECONVOLUTION #
 
@@ -498,7 +498,5 @@ class EventProcessor:
 if __name__ == "__main__":
     processor = EventProcessor(N=45, verbosity=3)
 
-    processor(Event(10675))
-
-    # processor(Event(10685))
-    # processor(Event(10687))
+    for event_id in [10675, 10685, 10687, 10677]:
+        processor(Event(event_id))
