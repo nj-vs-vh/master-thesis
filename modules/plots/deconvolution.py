@@ -46,8 +46,8 @@ def plot_convolution(
 
     # bin stripes
     ax1.axhline(0, color='black')
-    for i in range(N):
-        ax1.axvspan(i, i + 1, facecolor=([0, 0, 0] if i % 2 == 0 else [0.3, 0.3, 0.3]), alpha=0.15, edgecolor=None)
+    # for i in range(N):
+    #     ax1.axvspan(i, i + 1, facecolor=([0, 0, 0] if i % 2 == 0 else [0.3, 0.3, 0.3]), alpha=0.15, edgecolor=None)
 
     # counts
     ax1.bar(np.arange(N) + 0.5, n_vec, width=0.7, color=Color.N.value)
@@ -59,7 +59,7 @@ def plot_convolution(
     ax2 = ax1.twinx()
 
     if delta is not None:
-        for i in range(int(s_vec.max() / delta) + 1):
+        for i in range(int(s_vec.max() / delta) + 2):
             ax2.axhspan(
                 delta * i,
                 delta * (i + 1),
