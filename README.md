@@ -1,4 +1,4 @@
-# Магистерская ВКР
+# Магистерская диссертация
 
 # Установка
 
@@ -11,6 +11,6 @@ source $envname/bin/activate
 pip install -r requirements.txt
 ```
 
-# Описание
+# Текст
 
 См. [текст](doc/build/thesis.pdf).
