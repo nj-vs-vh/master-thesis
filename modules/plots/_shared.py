@@ -50,6 +50,6 @@ class Color(Enum):
 
 def _save_or_show(filename: Optional[str]):
     if filename:
-        plt.savefig(f'../doc/pic/{filename}.pdf')
+        plt.savefig(f'../doc/pic/{filename}.pdf', bbox_inches='tight')
     else:
         plt.show()
