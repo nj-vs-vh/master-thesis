@@ -1,555 +1,124 @@
-\chapter{Байесовская деконволюция}
-
+\chapter{Bayesian deconvolution}
 \label{chapt:bayesian-deconvolution}
 
-В этой главе будут подробнее рассмотрены физические интуиции, связанные с системой регистрации отражённого черенковского света в эксперименте СФЕРА-2; затем на их основе будет формально поставлена задача байесовской (статистической) деконволюции и описан метод её решения в общем виде; наконец, разработанный метод будет применён к экспериментальным данным эксперимента СФЕРА-2.
+Early stages of the SPHERE-2 analysis included an attempt to construct the process of estimating the parameters of an EAS photons in each PMT (the photon count and the arrival time distribution) directly from the recorded signal, but it was not successful for a number of reasons. Instead, the idea arose to carry out a full deconvolution, that is, to extract information about the photon flux at PMTs input at each moment of time. This deconvolution should take into account the stochastic properties of the PMT. Similar problems are also considered in other areas, for example, in the processing of \cite{Rhode1993} spectral measurements and \cite{Wipf2013} images. In such problems, Bayesian statistics is fruitfully used, based on the interpretation of probability as a measure of information about the random variable or confidence in its value \cite{Gelman2013}.
 
-\section{Предпосылки}
+\section{Problem setup}
 
-Как описано в разделе \ref{sec:pmt-amplification-description}, процесс генерации импульса анодного тока из фотоэлектронов является существенно стохастическим. Степень влияния этой стохастичности на оценку параметров ШАЛ сложно оценить приближённо, однако ясно, что этот вопрос заслуживает отдельного исследования. Яркие импульсы легко выделяются даже визуально, но сигнал в каналах, наблюдающих удалённые от оси ливня области, будет куда слабее, и его выделение на фоне фотонного шума будет требовать всё большей внимательности к статистическим свойствам методов восстановления.
+The input signal is modeled as a set of $\delta$-functions offsetted in time. Time bins ($12.5~\mathrm{nsec}$ in the SPHERE-2 detector) provide natural time scale, and we assume that within each time bin, $\delta$-functions are distributed uniformly. We limit ourselves with $N$ time bins. The deconvolution will yield estimation for $n_i$, photon counts per $[i-1, i]$ time bin, where $i = 1 \ldots N$.
 
-На ранних этапах работы была предпринята попытка построить процесс оценки параметров пакета фотонов ШАЛ (числа фотонов, среднего времени прихода и ширины пакета во времени) напрямую из записанного сигнала, однако она не увенчалась успехом по ряду причин. Вместо этого возникла идея провести полноценную деконволюцию, то есть извлечь из зарегистрированного в данном канале сигнала информацию о потоке фотонов на его входе в каждый момент времени. Ясно, что эта деконволюция не может быть точной --- требуется процедура, учитывающая стохастические свойства линейной системы. Подобные проблемы рассматриваются и в других областях, например, в обработке спектральных измерений \cite{Rhode1993} и изображений \cite{Wipf2013}.
+We assume that the PMT is a linear system with stochastic impulse response function $\tilde{h}(t)$ in the sense that each of the $\delta$-functions that make up the input signal is convolved with an independent sample $h(t) \sim\tilde{h}(t)$. This corresponds to the idea of fluctuations in the PMT amplification happening independently for each electron cascade. We will assume that any sample from $\tilde{h}(t)$ is causal, i.e. $\forall t < 0 \; \; \forall h \sim \tilde{h} \; \; h(t) = 0$, and finite in time, i.e. $\exists \tilde{L}$ such that $\forall t > \tilde{L} \; \; \tilde{h}(t) = 0$. We will call this random function, which gives a new sample for each input $\delta$-function, the system's randomized impulse response (RIR).
 
-В таких задачах плодотворно применяется байесовская статистика, основанная на интерпретации распределения случайной величины как меры информации о ней, или уверенности в её значении \cite{Gelman2013}. Она была выбрана в качестве теоретической рамки и в настоящей работе.
-
-Имея в виду эти соображения, построим математическое описание системы регистрации света и используем его, чтобы поставить и решить задачу статистической, или байесовской, деконволюции.
-
-\section{Структура входного сигнала}
-
-Представим входной сигнал системы набором $\delta$-функций, сдвиги которых определённым образом распределены во времени. Рассмотрим $N$ последовательных равновеликих временных бинов. Для простоты будем считать единицей времени длительность одного бина. Тогда мы можем задать границы бинов парами значений $[i-1, i]$, $i = 1 \ldots N$. Обозначим число $\delta$-функций в каждом бине $n_i$, $i = 1, \ldots, N$. В дальнейшем при деконволюции будем интересоваться именно величинами $n_i$, а не положениями отдельных $\delta$-функций.
-
-Следуя байесовской интерпретации вероятности как \textit{меры уверенности} в определённом факте и учитывая, что нас не будут интересовать положения отдельных $\delta$-функций на масштабах меньше $1$ временного бина, охарактеризуем их положения случайной величиной $t_{inbin}$ --- временем сдвига относительно начала бина, в который попала $\delta$-функция. Эта величина некоторым образом распределена в интервале $\left[0, 1\right)$ --- воспользуемся физической интуицией об отсутствии \textit{слишком быстрых вариаций} в интенсивности входного сигнала и положим $t_{inbin} \sim U(0, 1)$. Это оправдано для независимых друг от друга фоновых фотонов, и может служить хорошим приближением для фотонов ШАЛ в случае, если дисперсия времён прихода фотонов внутри <<пакета>> превышает длительность временного бина.
-
-Предположим, что импульсная характеристика линейной системы --- случайная функция $\tilde{h}(t)$ в том смысле, что каждая из $\delta$-функций, составляющих входной сигнал, будет получать независимую реализацию $h(t) \sim \tilde{h}(t)$. Это соответствует представлению о флуктуации коэффициента усиления ФЭУ. Будем считать, что любая реализация удовлетворяет условию каузальности, то есть $\forall t < 0 \; \; \forall h \sim \tilde{h} \; \; h(t) = 0$, и конечности во времени, то есть $\exists \tilde{L}$ такое, что $\forall t > \tilde{L} \; \; \tilde{h}(t) = 0$. Такую случайную функцию, которая для каждой входной $\delta$-функции даёт новую реализацию, будем называть рандомизированной импульсной характеристикой (РИХ) системы.
-
-Заметим, что эффект от $\delta$-функций в $i$-том бине проявляется в отсчётах c $i$ по $i + \left \lfloor{\tilde{L}}\right \rfloor$, где $\left \lfloor{\tilde{L}}\right \rfloor$ --- наибольшее целое число, не превышающее $\tilde{L}$ (округление вниз). Обозначим $L \equiv \left \lfloor{\tilde{L}}\right \rfloor$. Тогда полный сигнал от $\delta$-функций в выделенном входном окне гарантированно содержится в отсчётах с $1$ по $N + L$.
-
-Для иллюстрации постановки и решения задачи деконволюции в течение этой главы будем использовать следующую <<игрушечную>> рандомизированную импульсную характеристику: 
-
-\begin{equation}
-	\label{eq:example-problem-rir}
-	\begin{gathered}
-		\tilde{h}(t) = \tilde{A} \, \exp(-t/2) \\
-		\tilde{A} \sim U(0.75, 1) \\
-		L = 5
-	\end{gathered}
-\end{equation}
-
-В качестве входных данных сгенерируем сигнал, качественно соответствующий фотонному шуму в эксперименте СФЕРА-2: 
-
-\begin{equation}
-	\label{eq:example-problem-input}
-	\begin{gathered}
-		N = 30 \\
-		\vec{n} = \{n_i \sim \mathrm{Poisson}(\lambda) \quad \forall i \in [1, N]\} \\
-		\lambda = 15
-	\end{gathered}
-\end{equation} 
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{problem-setup-example}
-	\caption{Пример входных и выходных данных для задачи байесовской деконволюции. РИХ определена выражениями (\ref{eq:example-problem-rir}); пунктиром показаны участки, исключаемые из рассмотрения для устранения эффекта окна.}
-	\label{pic:problem-setup}
-\end{figure}
-
-Иллюстрация $\vec{n}$ и $\vec{s}$ для этой демонстрационной задачи приведена на рис. \ref{pic:problem-setup}.
-
-\subsection{Эффект окна} \label{sec:edge-effects}
-
-В реальном эксперименте входные фотоны не ограничены интервалом $[0; N]$, но приходят постоянно. Модифицируем постановку задачи так, чтобы устранить эффект окна, то есть плавный рост сигнала в начале и затухание в конце.
-
-Для этого достаточно просто исключить из всего дальнейшего рассмотрения эти участки сигнала. Так, в реальной ситуации фотоны продолжают приходить после $t=N$, и вносят соответствующий вклад в отсчёты начиная с $N-1$. Фотоны, приходившие до $t=0$, вносят вклад в отсчёты до $L$.
-
-Поэтому для восстановления значений $n_i$, $i = 1, \ldots, N$ мы будем использовать только отсчёты $s_j$ при $j = L+1, \ldots, N$. Этот участок изображён на рис. \ref{pic:problem-setup} сплошной линией, участки по краям, исключаемые из рассмотрения --- пунктиром.
-
-
-\section{Постановка задачи}
-
-Поставим задачу статистической деконволюции следующим образом, используя байесовскую терминологию (отсюда и название этой процедуры --- байесовскя деконволюция):
+We pose the problem of statistical deconvolution using Bayesian terminology
 
 \begin{quote}
-	Пусть дана рандомизированная импульсная характеристика системы $\tilde{h}(t)$ и значения сигнала на выходе системы $s_j, \; j = 1, \ldots, N + L$. Найти апостериорные функции плотности вероятности для значений $n_i$, $i = 1, \ldots, N$.
+	Given the randomized impulse response of the system $\tilde{h}(t)$ and the output signal $s_j, \; j = 1, \ldots, N + L$, find the posterior probability density functions for the values $n_i$, $i = 1, \ldots, N$.
 \end{quote}
 
-Заметим, что, в отличие от обычной деконволюции, мы не ставим задачу оценить исходный сигнал, представляющий собой сумму $\delta$-функций, сам по себе, но только его обобщённую характеристику, по сути, интегрированный поток за каждый бин.
+Note that, unlike regular deconvolution, we are not trying to estimate the full original signal (sum of $\delta$-functions), but only its integrated in each time bin.
 
-\section{Выходной сигнал как реализация случайного процесса}
+Mathematically, we write
 
-Ясно, что в силу случайного характера отклика системы, а также аггрегирования $\delta$-функций в бины, значения отсчётов $\{ s_j \}$ являются реализациями некоторых случайных величин. Обозначим сами эти случайные величины как $\{ S_j \}$.
+\begin{equation}
+	P(\vec{n} | \vec{s}) = \frac{P(\vec{s} | \vec{n}) \, P(\vec{n})}{P(\vec{s})}
+\end{equation}
 
-Запишем $S_j$ как сумму вкладов от $\delta$-функций разных бинов
+Using \textit{uninformative} prior $P(\vec{n}) = Const$ (it can't be normalized, but we will use only proportionality, not an absolute value), denoting likelihood function $\mathcal{L}(\vec{s}, \vec{n}) = P(\vec{s} | \vec{n})$, we get
+
+\begin{equation}
+	\label{eq:bayes-theorem-adapted}
+	P(\vec{n} | \vec{s}) \propto \mathcal{L}(\vec{s}, \vec{n})
+\end{equation}
+
+\section{Likelihood function}
+\label{sec:naive-monte-carlo-likelihood}
+
+PMT output signal $\vec{s}$ is a sample from some multivariate random variable. Denoting this variable $\vec{S}$, we can write
 
 \begin{equation}
 	S_j = \sum_{l=0}^{L} C(n_{j-l}, l)
 	\label{eq:S-definition-as-random-variable}
 \end{equation}
 
-Здесь $C(n, l)$ --- случайная величина, описывающая вклад в сигнал на $j$-том временном отсчёте от $n$ $\delta$-функций, время прихода которых расположено в бине $j - l$, иначе говоря, вклад с \textit{задержкой} $l$ бинов. Из выбранной схемы индексации бинов и условий каузальности и ограниченности во времени РИХ легко видеть, что $l \in \left[0, L\right]$, поскольку вклад от $\delta$-функций из более ранних бинов равен нулю.
+Here $C(n, l)$ is a random variable describing the contribution of $n$ $\delta$-functions with the \textit{delay} of $l$ bins. It is easy to see from the chosen bin indexing scheme and the conditions of causality and boundedness in time of the RIH that $l \in \left[0, L\right]$, since the contribution from $\delta$-functions from earlier bins is equal to zero.
 
-Охарактеризуем распределение $C(n, l)$. Проще всего сделать это через Монте-Карло-сэмплирование распределения этой величины. Получим сначала с произвольной точностью эмпирическую функцию плотности распределения для $C(1, l)$. Для этого сгенерируем значения $t_k \sim t_{inbin};$ и функции $h_k(t) \sim \tilde{h}(t)$ для $k = 1 \ldots N_{sample}$. Выборка для $C(1, l)$ тогда будет состоять из значений $h_k(l + 1 - t_k)$. Выборку для $C(n, l)$ легко получить, проделав описанную процедуру $n$ раз и сложив все $n$ реализаций вместе (так как система линейна, случайная величина отклика от $n$ $\delta$-функций равна сумме соответствующих величин для 1 $\delta$-функций).
+The distribution of $C(n, l)$ can be studied with Monte-Carlo. Sampling it goes as follows. If we sample RIR $h_k(t) \sim \tilde{h}(t)$ and in-bin time $t_{inbin} \sim U(0, 1)$, and get a sample from $C(1, l) = h_k(l + 1 - t_inbin)$. Sampling from $C(n, l)$ is trivial, since the system is linear and we can just add $n$ independent samples from $C(1, l)$.
 
-\section{Предварительная оценка}
-\label{sec:rough-estimation}
+To calculate likelihood function, one needs to find a probability to find a particular $\vec{s}$ sampling from $\vec{S}$. Naive Monte-Carlo likelihood estimation requires sampling a large number of $\vec{n}$ and computing histogram in $\vec{s}$ space. This method is computationally unfeasible, because of the curse of dimensionality: in practice we are interested in signals at least 50 time bins long.
 
-Перед тем, как решать задачу деконволюции в статистическом смысле, сделаем грубую оценку $\vec{n}$, основанную только на соотношениях между математическими ожиданиями случайных величин. Для этого применим операцию вычисления математического ожидания к обеим частям равенства (\ref{eq:S-definition-as-random-variable}).
-
-$\delta$-функции независимы друг от друга в пределах одного бина, из чего следует $ \mathbb{E} \; C(n, l) = n \; \mathbb{E} \, C(1, l)$. Нетрудно заранее вычислить для данной РИХ выборки значений $C(1, l)$ для $l = 0 \ldots L$. Тогда получим, обозначая $c_l \equiv \mathbb{E} \; C(1, l)$,
-
-\begin{equation}
-	\bar{S}_j = \mathbb{E} \; S_j = \sum_{l=0}^{L} \mathbb{E} \; C(n_{j-l}, l) = \sum_{l=0}^{L} n_{j-l} \; \mathbb{E} \; C(1, l) = \sum_{l=0}^{L} n_{j-l} c_l
-\end{equation}
-
-Суммирование можно записать в матричном виде для $j = 1, \ldots, N + L$:
-
-\begin{equation}
-	\begin{pmatrix} 
-		c_0   &  0   &  0   &\dotsm&  0     \\
-		c_1   & c_0  &  0   &\dotsm&  0     \\
-		c_2   & c_1  & c_0  &      & \vdots \\
-		c_3   & c_2  & c_1  &\ddots&  0     \\
-		\vdots& c_3  & c_2  &\ddots&  c_0   \\
-		c_L   &\vdots& c_3  &\ddots&  c_1   \\
-		0     & c_L  &\vdots&\ddots&  c_2   \\
-		\vdots&      & c_L  &      &  c_3   \\
-		0     &\dotsm&  0   &\ddots& \vdots \\
-		0     &\dotsm& 0    &   0  &  c_L   \\
-	\end{pmatrix}
-	\begin{pmatrix} 
-		n_1 \\ n_2 \\ n_3 \\ \vdots \\ n_N
-	\end{pmatrix}
-	=
-	\begin{pmatrix} 
-		\bar{S}_1 \\ \bar{S}_2 \\
-		\vdots \\
-		\bar{S}_N \\ \bar{S}_{N+1} \\
-		\vdots \\
-		\bar{S}_{N+L}
-	\end{pmatrix}
-	\label{eq:mean-vector-calculation}
-\end{equation}
-
-Для исключения граничных эффектов, и тем самым перехода к случаю непрерывного потока фотонов достаточно, как указано в разделе \ref{sec:edge-effects}, ограничиться рассмотрением строк $j = L+1, \ldots, N$, то есть убрать первые и последние $L$ уравнений системы.
-
-Эта, вероятно, несовместная система линейных уравнений, допускает решение в смысле наименьших квадратов с помощью псевдообратной матрицы Мура-Пенроуза \cite{Penrose1956}. Псевдообратная матрица $C^+$ для $C$ определяется следующими условиями: (1) $C C^+ C = C$, (2) $C^+ C C^+ = C^+$, (3) $C C^+$ и $C^+ C$ --- эрмитовы матрицы. Псевдообратная матрица всегда существует, и для системы $C\vec{n} = \vec{S}$ вектор $C^+ \vec{S}$ даёт искомое МНК-решение системы. Приближённый численный расчёт такой матрицы можно провести, например, с помощью функции \verb|pinv| модуля \verb|numpy.linalg| в Python \cite{Harris2020}.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{mean-estimation}
-	\caption{Оценка $\vec{n}$ в предположении, что выходной сигнал $\vec{s}$ равен своему математическому ожиданию. Пунктиром показана область, где оценка искажена эффектом ограниченности выборки во времени.}
-	\label{pic:mean-estimation}
-\end{figure}
-
-Конечно, для формального использования этого решения системы необходимо знать $\mathbb{E} \, S_j$, в то время как в эксперименте мы имеем всего лишь единственную реализацию этой случайной величины $s_j$. Для грубой оценки остаётся положить $\mathbb{E} \; S_j \approx s_j$. Результат описанной процедуры приведён на рис. \ref{pic:mean-estimation} фиолетовым, пунктиром отмечена область, в которой оценка искажена эффектом окна.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{mean-estimation-assessment}
-	\caption{Распределения истинных и грубо восстановленных значений $\vec{n}$ для окна шириной 1000 бинов.}
-	\label{pic:mean-estimation-assessment}
-\end{figure}
-
-Строгое исследование свойств такой <<one-shot>> оценки $\vec{n}$ находится за рамками данной работы. Однако для простой численной проверки можно провести описанную процедуру для большего числа входных бинов и сравнить распределения истинных и оцененных значений $\vec{n}$. На рис. \ref{pic:mean-estimation-assessment} приведено такое сравнение для 1000 бинов. Видно, что распределения практически совпадают, а значит отсутствует по крайней мере систематическая ошибка. В дальнейшем эта оценка будет играть роль первого приближения, или стартовой точки, на основе которой с помощью численных методов будет искаться полноценное решение.
-
-\section{Решение задачи байесовской деконволюции}
-\label{sec:bayesian-deconvolution-solution}
-
-Теперь перейдём к решению полноценной статистической задачи, используя метод, описанный в предыдущем разделе, как первое приближение.
-
-Запишем сначала теорему Байеса в общем виде, учитывая, что наблюдаемыми значениями является сигнал $\vec{s}$, а неизвестными параметрами, которые задают распределение наблюдаемых --- $\vec{n}$:
-
-\begin{equation}
-	P(\vec{n} | \vec{s}) = \frac{P(\vec{s} | \vec{n}) \, P(\vec{n})}{P(\vec{s})}
-\end{equation}
-
-Поясним вероятности, входящие в выражение: 
-
-\begin{enumerate}
-	\item $P(\vec{n} | \vec{s})$ --- искомое \textit{апостериорное} распределение, описывающее (в байесовском определении вероятности) наши знания о $\vec{n}$ после проведения измерений
-	\item $P(\vec{s} | \vec{n}) \equiv \mathcal{L}(\vec{s}, \vec{n})$ --- функция правдоподобия, описывающая, насколько вероятна регистрация определённых значений $\vec{s}$ при заданных параметрах $\vec{n}$
-	\item $P(\vec{n}) \equiv \pi(\vec{n})$ --- \textit{априорное} распределение $\vec{n}$, независимое от знания конкретного выходного сигнала (в философском смысле предшествующее ему)
-	\item $P(\vec{s})$ --- полная вероятность регистрации данного сигнала при всех возможных значениях $\vec{n}$. Она также называется маргинальной вероятностью или нормировочным множителем, по определению $P(\vec{s}) = \int_{\infty} P(\vec{s} | \vec{n}) \, P(\vec{n}) d\vec{n}$. Эту величину можно использовать для сравнения статистических моделей: например, если бы мы имели в распоряжении альтернативную модель объяснения значений $\vec{s}$ и хотели бы понять, какая из двух лучше описывает наблюдаемые данные. Однако для поставленной задачи нет нужды ни вычислять, ни даже учитывать этот множитель.
-\end{enumerate}
-
-Учитывая введённые обозначения и соображения, запишем
-
-\begin{equation}
-	\label{eq:bayes-theorem-adapted}
-	P(\vec{n} | \vec{s}) \propto \mathcal{L}(\vec{s}, \vec{n}) \, \pi(\vec{n})
-\end{equation}
-
-\subsection{Выбор априорного распределения}
-\label{sec:deconv-prior}
-
-В качестве априорного распределения будем использовать неограниченное равномерное, или \textit{неинформативное} распределение. Методы байесовской статистики работают даже в ситуации, когда у нас нет вообще никакой информации о распределении $\vec{n}$ до начала измерений. Формально для этого нужно положить $\pi(\vec{n}) = Const \; \forall \vec{n}$. Такое распределение нельзя использовать напрямую, поскольку его невозможно отнормировать на $1$. Однако с точки зрения выражения (\ref{eq:bayes-theorem-adapted}) это позволяет просто исключить $\pi(\vec{n})$ из правой части.
-
-\subsection{Полное вычисление функции правдоподобия методом Монте-Карло}
-
-\label{sec:naive-monte-carlo-likelihood}
-
-Функция правдоподобия $\mathcal{L}(\vec{s}, \vec{n})$ определяется как вероятность того, что данный сигнал $\vec{s}$ получился в результате преобразования системой входного сигнала $\vec{n}$.
-
-Опишем сначала Монте-Карло метод оценки правдоподобия, и затем введём упрощения, которые позволят эффективнее вычислять эту функцию, а также обоснуем их корректность. Для этого при фиксированных $\vec{n}$ необходимо смоделировать выборку из большого числа реализаций случайной величины $\vec{S}$, а затем оценить плотность вероятности в точке $\vec{s}$ по этой выборке.
-
-Существует несколько методов для такой оценки, самый простой из которых --- многомерная гистограмма. Для этого пространство реализаций $\vec{S}$ нужно поделить на ячейки, подсчитать число элементов выборки, попавших в каждую ячейку, и поделить на общее число элементов выборки и на объём ячейки. Нетрудно видеть, что полученное число даст оценку плотности вероятности в произвольной точке, а значит, искомую оценку функции правдоподобия.
-
-Однако оказывается, что для поставленной задачи метод прямого вычисления функции правдоподобия плохо годится из-за <<проклятия размерности>>. Размерность пространства, в котором нужно оценить эмпирическую функцию плотности вероятности, равна ширина окна, в котором рассматривается входной сигнал, в бинах. Соответственно, общее число $N$-мерных бинов составляет $g^{N}$, где $g$ --- мощность бинирования значения в каждом отсчёта. В этой ситуации для надёжной оценки придётся генерировать выборку сигналов сравнимого, и очень большого, объёма.
-
-Поэтому вместо прямого использования описанного метода аппроксимируем распределение $\vec{S}$ более вычислительно эффективной функцией.
-
-\subsection{Аппроксимация функции правдоподобия многомерным нормальным распределением}
-
+\subsection{Multivariate normal distribution approximation}
 \label{sec:likelihood-as-multivar-normal}
 
-Проанализируем результат полной Монте-Карло симуляции, чтобы исследовать распределение $p(\vec{S} | \vec{n})$ и показать, что его в самом деле можно эффективно и с высокой точностью аппроксимировать многомерным нормальным распределением.
+We approximate likelihood function with the multivariate normal distribution. There is no formal proof for the applicability for such approximation, but we estimate that it is fairly close for input intensities as low as 4-5 $\delta$-functions per bin, which is the characteristic background intensity in SPHERE-2 detector. For partial univariate $s_j$ distribution, the probability density function is within 1-2\% of its normal approximation.
 
-\subsubsection{Частные распределения}
-
-Из самых общих соображения ясно, что распределение $S_j \; \forall j$ будет более или менее близко к нормальному просто в силу того, что каждая из величин $S_j$ является суммой независимых (хотя и не одинаково распределённых) вкладов от фотонов в предыдущих бинах. Также сразу можно сказать, что \textit{чем меньше среднее число фотонов в бине, тем хуже будет аппроксимация нормальным распределением}. На рис. \ref{pic:s-j-norm-assess} приведены несколько распределений <<лучшего>>, <<медианного>> и <<худшего>> распределений $S_j$ для нескольких значений среднего числа фотонов в бине $\lambda_n \equiv \mathbb{E} \, n_i$. Из предварительного анализа известно, что интенсивность фоновых фотоэлектронов в экспериментальных кадрах составляет около $3$ -- $4$ штук на бин. При этом видно, что даже для меньших потоков самое существенное среднеквадратичное отклонение плотности распределения от гауссианы не превышет 10\%. Таким образом, \textit{частное распределение} каждой компоненты вектора $\vec{S}$ можно приблизить нормальным распределением с эффективной погрешностью в несколько процентов для практически значимых случаев.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{S-j-normality-assessment.pdf}
-	\caption{Оценка нормальности частных распределений компонент $\vec{S}$ для разных интенсивностей входного потока: от экстремально низких $1$ и $2$ до средней ожидаемой $10$. <<Лучший>>, <<медианный>> и <<худший>> бины определены эвристически по квадрату разницы выборочного среднего и медианы (чем больше эта величина, тем менее симметрично распределение). На каждом графике построена плотность нормального распределения с соответствующими $\mu$ и $\sigma$, а также приведено среднеквадратичное отклонение гистограммы от гауссианы в процентах относительно максимального значения.}
-	\label{pic:s-j-norm-assess}
-\end{figure}
-
-\begin{figure}
-	\centering
-	\includegraphics[width=1.05\columnwidth]{S-j-pairwise-normality-assessment.pdf}
-	\caption{Оценка нормальности совместных двумерных распределений для пар компонент $\vec{S}$. График построен с помощью библиотеки corner \cite{ForemanMackey2016}.}
-	\label{pic:s-j-pairwise-norm-assess}
-\end{figure}
-
-\subsubsection{Полное $(N-L)$-мерное распределение}
-Провести аналогичную процедуру для полного распределения $\vec{S}$ --- непростая задача, поэтому ограничимся здесь визуальной оценкой двухмерных распределений для пар $(S_j; S_k)$ при $k - j < L$ (из постановки задачи ясно, что на б\'{о}льших расстояниях элементы $\vec{S}$ независимы). На рис. \ref{pic:s-j-pairwise-norm-assess} представлены такие распределения. Видно, что двухмерные распределения представляют собой овалы симметричной формы, как и ожидается от многомерного нормального распределения.
-
-Таким образом, можно положить, что \textit{распределение вектора $\vec{S}$ при заданных $\vec{n}$ можно приблизить многомерным нормальным распределением}. Это приближение существенно упрощает вычисление функции правдоподобия $\mathcal{L}(\vec{n}) \equiv P(\vec{S} | \vec{n})$, которая и сводится к вычислению плотности вероятности условного распределения $\vec{S}$ в точке, заданной наблюдаемым сигналом. Этот метод оказывается гораздо более устойчивым и вычислительно эффективным, чем наивный метод Монте-Карло, описанный в разделе \ref{sec:naive-monte-carlo-likelihood}.
-
-Многомерное нормальное распределение в общем виде задаётся вектором математических ожиданий $\vec{\mu}$ и матрицой ковариаций $\Sigma$. Функция плотности вероятности $(N+L)$-мерного случайного вектора $\vec{S}$ тогда вычисляется как
+The general form of multivariate normal distribution is
 
 \begin{equation}
 	\label{eq:multivariate-normal-density}
-	p(\vec{S}) = \left( (2 \pi)^{N+L} \, \det \Sigma \right)^{-1/2} \exp \left( - \frac{1}{2} (\vec{S} - \vec{\mu})^T \Sigma^{-1} (\vec{S} - \vec{\mu}) \right)
+	p(\vec{s}) = \left( (2 \pi)^{N+L} \, \det \Sigma \right)^{-1/2} \exp \left( - \frac{1}{2} (\vec{s} - \vec{\mu})^T \Sigma^{-1} (\vec{s} - \vec{\mu}) \right)
 \end{equation}
 
-Вектор $\vec{\mu} \equiv \mathbb{E} \, \vec{S}$ как функция $\vec{n}$ вычисляется в соответствии с выражением (\ref{eq:mean-vector-calculation}). Вычислим, аналогично, произвольный элемент матрицы $\Sigma_{ij} \equiv \cov\left( S_i, S_j \right)$ при заданном $\vec{n}$. В силу симметричности матрицы ковариаций можно положить для определённости $i \le j$. Запишем выражение (\ref{eq:S-definition-as-random-variable}) для двух интересующих нас элементов $\vec{S}$:
-
-\begin{align}
-	S_i &= \sum_{l=0}^{L} C(n_{i-l}, l)\\
-	S_j &= \sum_{k=0}^{L} C(n_{j-k}, k)
-\end{align}
-
-Источник возможной ненулевой ковариации этих величин --- члены, описывающие вклады фотонов из одного бина, но на разных задержках, все прочие слагаемые являются независимыми. Условие, описывающее такие попарно-скоррелированные члены, получается из равенства индексов $n$ в суммах: $i-l = j-k$. Вводя $\Delta \equiv j - i$, отсюда получаем $k = l + \Delta$. Отсюда сразу следует интуитивный вывод о том, что при $\Delta > L$ ковариация будет заведомо нулевой в силу конечности РИХ во времени.
-
-Используем следующее свойство ковариации: если $x$, $y$, $\epsilon$, $\eta$ --- случайные величины, из которых только $x$ и $y$ являются зависимыми, то $\cov(x + \epsilon, y + \eta) = \cov(x, y)$. Иначе говоря, заведомо независимые члены при вычислении ковариации можно просто опустить. Проделаем это в суммах выше, получив таким образом <<скореллированные части>> $\hat{S}_i$ и $\hat{S}_j$ такие, что $\cov ( S_i, S_j  ) = \cov ( \hat{S}_i, \hat{S}_j )$:
-
-\begin{align}
-	\hat{S}_i &= \sum_{l=0}^{L-\Delta} C(n_{i-l}, l)\\
-	\hat{S}_j &= \sum_{k=\Delta}^{L} C(n_{j-k}, k) = \left[k=l+\Delta\right] = \sum_{l=0}^{L-\Delta} C(n_{i-l}, l+\Delta)
-\end{align}
-
-Наконец, используем ещё одно свойство ковариации: если среди случайных величин $x_1$, $x_2$, $y_1$, $y_2$ независимы все пары, кроме $x_1$ и $y_1$, $x_2$ и $y_2$, то $\cov(x_1 + x_2, \, y_1 + y_2) = \cov(x_1, y_1) + \cov(x_2, y_2)$. Индуктивно обобщая на случай сумм с произвольным числом членов, и принимая во внимание, что фотоны в разных бинах независимы, получаем
+Here, mean vector $\vec{\mu}$ and covariance matrix $\Sigma$ depend on input $\vec{n}$ and RIR $\tilde{h}(t)$. Specifically, $\vec{\mu} \equiv \mathbb{E} \vec{S}$ can be obtained from \ref{eq:S-definition-as-random-variable} by computing mean of left and right terms and using the fact that $\mathbb{E} C(n, l) = n \; \mathbb{E} C(1, l)$. The matrix $\Sigma$ can be expressed in terms of $C(n, l)$ autocovariance, which can be further expressed in terms of $C(1, l)$ autocovariance. The latter depend only on RIR and not on $\vec{n}$, and can be pre-calculated for computational effectiveness.
 
 \begin{equation}
-	\cov(S_i, S_j) = \cov(\hat{S}_i, \hat{S}_j) = \sum_{l=0}^{L - \Delta} \cov(C(n_{i-l}, l), C(n_{i-l}, l + \Delta))
+	\Sigma_{ij} = \cov(S_i, S_j) = \sum_{l=0}^{L - (i-j)} \cov(C(n_{i-l}, l), C(n_{i-l}, l + (i-j)))
 \end{equation}
 
-Наконец, принимая во внимание, что сама по себе величина $C(n, l)$ есть сумма $n$ независимых одинаково распределённых случайных величин, а между членами сумм $C(n, l)$ и $C(n, l + \Delta)$ есть только попарные корреляции в отношении 1 к 1, можно записать окончательную формулу для вычисления элемента матрицы ковариации:
+
+\section{Output signal error}
+
+Multivariate normal approximation does not account for the error of measuring the output signal. The largest contribution to this error is ADC discretization. We assume that ADC floors its input, i.e. for each recorded $s_j$, the real input value was somewhere between $s_j$ and $s_j + \delta$ and the distribution is uniform. Such error can be accounted for by integrating the $\mathcal{L}_{\mathrm{exact}}(\vec{s}, \vec{n})$ defined by \ref{eq:multivariate-normal-density} over the $N$-dimensional cube with side $\delta$ and <<lower>> corner at $\vec{s}$:
 
 \begin{equation}
-	\cov(S_i, S_{i + \Delta}) = \sum_{l=0}^{L - \Delta} n_{i-l} \; \cov\left(C(1, l), C(1, l + \Delta)\right)
+	\label{eq:likelihood-with-error-uniform-error}
+	\mathcal{L}(\vec{s}, \vec{n}) = \int_{s_1}^{s_1 + \delta} \int_{s_2}^{s_2 + \delta} \ldots \, \int_{s_{N}}^{s_N + \delta} \mathcal{L}_{\mathrm{exact}}(\vec{s}, \vec{n}) \, d\vec{s}
 \end{equation}
 
-Из формулы видно, что автоковариация сигнала описана полностью в терминах автоковариации РИХ и чисел фотонов в соответствующих бинах, служащих весами для вклада разных участков РИХ.
+To perform this integration numerically, we use the ready-made adaptive integration algorithm described in \cite{Genz1992}, implemented in the \texttt{scipy.stats} \cite{2020SciPy-NMeth} \texttt{Python} package.
 
-Для удобства вычислений можно записать это равенство в матричном виде для значений $\Delta \in \left[0; L\right]$. Для этого введём обозначение $\xi(l, \Delta) \equiv \cov\left(C(1, l), C(1, l + \Delta)\right)$ и с помощью него запишем:
 
-\begin{equation}
-	\begin{pmatrix} 
-		\xi(L, 0) & \xi(L-1, 0) & \xi(L-2, 0) & \dotsm & \xi(0, 0) \\
-		0    & \xi(L-1, 1) & \xi(L-2, 1) & \dotsm & \xi(0, 1) \\
-		0    &      0      & \xi(L-2, 2) & \dotsm & \xi(0, 2) \\
-		\vdots &   \vdots    &    \vdots   & \ddots &   \vdots  \\
-		0    &      0      &      0      & \dotsm & \xi(0, L)
-	\end{pmatrix}
-	\begin{pmatrix} 
-		n_{i-L} \\ n_{i-(L-1)} \\ n_{i-(L-2)} \\ \vdots \\ n_{i}
-	\end{pmatrix}
-	=
-	\begin{pmatrix} 
-		\Sigma_{i, i} \\
-		\Sigma_{i, i+1} \\ 
-		\Sigma_{i, i+2} \\ 
-		\vdots \\ 
-		\Sigma_{i, i+L}
-	\end{pmatrix}
-	\label{eq:Xi-matrix-for-Sigma-calculation}
-\end{equation}
-
-Это достаточно громоздкое выражение позволяет, однако, единожды вычислить матрицу $\Xi$ и эффективно рассчитывать все элементы матрицы ковариаций $\Sigma$ при каждом заданном $\vec{n}$. Для окончательного вычисления матрицы $\Sigma$ достаточно просто составить её из векторов $\left( \Sigma_{i, i}, \dots, \Sigma_{i, i+L} \right)^T$, учитывая свойство симметрии $\Sigma_{i, j} = \Sigma_{j, i}$, а также доказанный факт $\Sigma_{i, j} = 0 \quad \forall j > i + L$
-
-После исключения областей влияния эффекта окна (первых и последних $L$ элементов $\vec{S}$) нас будут интересовать только внутренняя часть матрицы $\Sigma$, то есть индексы $i, j \in [L + 1; N]$. Это удобно, так как для вычисления интересующей нас части $\Sigma$ не нужно рассматривать <<урезанную>> матрицу $\Xi$, что потребовалось бы, если бы мы не исключали границы.
-
-Таким образом, функция правдоподобия задаётся формулой (\ref{eq:multivariate-normal-density}), где вектор математических ожиданий и матрица ковариаций являются функциями $\vec{n}$ и вычисляются в соответствии с формулами (\ref{eq:mean-vector-calculation}) и (\ref{eq:Xi-matrix-for-Sigma-calculation}).
-
-\subsection{Сэмплирование апостериорного распределения}
-
+\section{Posterior distribution sampling}
 \label{sec:mcmc-sampling}
 
-Имея функцию правдоподобия $\mathcal{L}$ и учитывая выбранные неинформативные априорные распределения, мы получаем апостериорную функцию плотности вероятности $P(\vec{n} | \vec{s}) \propto \mathcal{L}(\vec{n}, \vec{s})$, которую теперь требуется исследовать.
+Having obtained the likelihood function $\mathcal{L}$, we can estimate $\vec{n}$ given the recorded output signal $\vec{s}$ and RIR $\tilde{h}(t)$. We want not only to find the optimal value of $\vec{n}$, but also characterize our confidence in it.
 
-Требуется получить не только наиболее оптимальное значение $\vec{n}$, но и оценку неопределённости этой величины. Поэтому, например, простой метод максимального правдоподобия, в котором мы нашли бы максимум $\mathcal{L}$ в пространстве параметров, не подходит --- хотя и для него существуют методы поиска доверительных интервалов, они чаще всего ограничены предположениями о форме профиля правдоподобия. Мы будем использовать метод Монте-Карло с марковскими цепями (Markov Chain Monte Carlo), который не имеет этого ограничения и хорошо применим к задачам большой размерности. Суть метода сводится к запуску марковского процесса случайного блуждания в пространстве параметров $\vec{n}$ с такой специально подобранной вероятностью перехода из точки в точку, зависящей от апостериорной вероятности, что в пределе <<след>> от этого блуждания даст выборку из исследуемой функции плотности. Общей характеристикой таких методов является то, что они зависят только от отношения вероятностей в разных точках пространства параметров, именно поэтому в выражении (\ref{eq:bayes-theorem-adapted}) и во всех последующих вычислениях мы не интересовались ни полной маргинальной вероятностью наблюдаемых данных, ни нормировкой априорного распределения.
+Instead of maximum likelihood method, where we would maximize the value of $\mathcal{L}(\vec{n}, \vec{s})$ with respect to $\vec{n}$, we use Marko Chain Monte Carlo sampling to draw a large sample from $P(\vec{n} | \vec{s}) \propto \mathcal{L}(\vec{n}, \vec{s})$. Using this sample of possible $\vec{n}$ values, we will then get the bets-fitting value for system's input, and its error.
 
-Подробный обзор и теоретическое исследование весьма широкой области MCMC-сэмплирования находятся за рамками данной работы, но могут быть найдены, например, в обзоре \cite{Sharma2017}.
+The idea of the Markov Chain Monte Carlo (MCMC) family of methods \cite{Sharma2017} is to launch a Markov process (random walk) in the parameter space $\vec{n}$ with transition probability chosen in such a way that the <<trace>> of the walk will yield a sample from the target probability density functions. A common characteristic of this family is that they require only knowing only a ratio of probability density functions at different points in the parameter space, which is why in the expression (\ref{eq:bayes-theorem-adapted}) and in all subsequent calculations we were able to drop the marginal probability and the normalization of the prior distribution.
 
-\subsubsection{Афинно-инвариантное MCMC-сэмплирование}
+The particular method used in this work is affine-invariant MCMC \cite{Goodman2010}, implemented in \verb|Python| package \verb|emcee| \cite{ForemanMackey2016}.
 
-В данной работе будем использовать популярный алгоритм афинно-инвариантного сэмплирования, предложенный в 2010 году в работе \cite{Goodman2010}.
+\section{Deconvolution results}
 
-В этом алгоритме используется не одна марковская цепь (англ. \textit{walker}), а целый ансамбль из нескольких сотен или даже тысяч цепей, и новый шаг генерируется для каждой цепи в зависимости от состояний остальных. Конкретный алгоритм генерации шага (или просто <<шаг>>, англ. \textit{move}) не фиксирован и может быть выбран в зависимости от конкретной задачи. Каждый из шагов обладает своими особенностями и по-своему влияет на предпочтительное количество цепей и необходимое количество итераций. Самый универсальный --- так называемый <<шаг-растяжка>> (англ. \textit{stretch move}), будет использоваться далее. Опишем вкратце алгоритм генерации шага-растяжки.
-
-Рассмотрим $i$-тую цепь, находящуюся в состоянии $X_i(t)$ (состояние цепи есть точка в пространстве параметров, иначе говоря, конкретное значение $\vec{n}$). Выберем случайным образом комплементарную цепь из ансамбля и обозначим её $X_j(t)$, $j \neq i$. Сгенерируем <<предложение>> (англ. \textit{proposal}) для данной цепи:
-\begin{equation}
-	\label{eq:gw2010-stretch-move}
-	Y = X_j(t) + Z \; (X_i(t) - X_j(t))
-\end{equation}
-
-Предложенное новое положение $i$-той цепи находится на прямой, соединяющей её с другой цепью на данном шаге. Масштабный множитель $Z$ --- случайная величина, на которую накладывается теоретическое ограничение: для существования стационарного распределения марковской цепи достаточно обеспечить детальное равновесие, то есть равенство вероятностей перехода $X_i \rightarrow Y$ и $Y \rightarrow X_i$. Для этого, в свою очередь, достаточно потребовать, чтобы функция плотности вероятности величины $Z$ удовлетворяла свойству симметрии $g(1 / z) = z \, g(z)$. В качестве конкретного вида этой функции авторы предлагают использовать
-
-\begin{equation}
-	g(z) \propto \begin{cases}
-		\frac{1}{\sqrt{z}}& \text{при } z \in \left[\frac{1}{a}, a\right], \\
-		0& \text{в остальных случаях }
-	\end{cases}
-\end{equation}
-
-Наконец, после генерации предложения для нового положения $i$-той цепи (не важно, описанным шагом-растяжкой или любым другим алгоритмом) требуется принять или отвергнуть предложенное значение $Y$. Вероятность того или иного исхода получается из условия \textit{частичного ресэмплинга} (которое в свою очередь выводится из принципа детального равновесия, записанного для всего ансамбля цепей), которое гласит: чтобы переход ансамбля цепей в новое состояние не менял совместного распределения всего ансамбля (которое полагается равным целевому сэмплируемому распределению), достаточно, чтобы переход одной цепи не менял условную плотность вероятности для данной цепи при фиксированных всех остальных. Вероятность принять предложение $Y$, обеспечивающая выполнение условия, задаётся величиной
-
-\begin{equation}
-	P(X_i(t + 1) = Y) = min \left\{ 1, \; Z^{N - 1} \frac{p(Y)}{p(X_i(t))} \right\}
-\end{equation}
-
-Упрощённо можно сказать, что цепи ансамбля будут с большей вероятностью переходить в области большего значения сэмплируемой функции (то есть исследуемой плотности апостериорной распределения), но при этом также чаще оставаться вблизи <<соседей>> по ансамблю.
-
-\subsubsection{Имплементация MCMC-сэмплирования в пакете emcee}
-
-\label{sec:mcmc-implementation-details}
-
-Эффективная и устойчивая реализация алгоритма MCMC-сэмплирования представляет собой непростую задачу. В дальнейшем будет использоваться популярная имплементация описанного алгоритма в пакете \verb|emcee| на языке \verb|Python| \cite{ForemanMackey2016}.
-
-Пакет предоставляет возможность не только провести само сэмплирование, но и оценить корректность результата. Строгое математическое доказательство позволяет установить только \textit{асимптотическую} сходимость ансамбля цепей к целевому распределению. При этом реальная длина цепей конечна, и степень сходимости требует отдельной оценки. Количество шагов должно быть \textit{достаточно большим} для использования результата, но достаточно малым для завершения вычисления за разумное время и с использованием разумного объёма памяти.
-
-Даже если ансамбль сошёлся с хорошей точностью, из него ещё требуется получить выборку независимых реализаций случайной величины. Состояние ансамбля на конкретном (например, последнем) шаге даёт ряд значений, однако число цепей в ансамбле чаще всего меньше, чем желаемое количество элементов выборки, значит, приходится брать значения на нескольких шагах. Шаги каждой цепи принципиально зависимы, но корреляция падает с расстоянием, а следовательно, для получения выборки нужно выбирать \textit{достаточно редкие} состояния ансамбля цепей.
-
-На практике эти две проблемы выражаются в необходимости выбрать время <<разгона>> (англ. \textit{burn-in}) и <<прореживание>> (англ. \textit{thinning}) цепей. Информированный выбор обоих параметров можно провести с помощью оценки \textit{интегрированного времени автокорреляции} $\tau$ \cite{Sokal1997}. Интегрированное время автокорреляции даёт оценку числа шагов, на котором корреляция значений цепи падает в $e$ раз. Соответственно, период разгона можно взять равным нескольким $\tau$, и прореживать значения примерно каждые $\tau$ шагов. Пакет \verb|emcee| предоставляет готовые средства для оценки величины $\tau$ \footfullcite{emceeAutocorrTutorial}.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{bayesian-estimation-result}
-	\caption{Результат решения задачи байесовской деконволюции. Зелёным показаны \textit{маргинальные апостериорные распределения}, то есть однопараметрические проекции апостериорного распределения как функции $n_i$ для области $i$, не подверженной влиянию эффекта окна. Следует заметить, что на самом деле многомерное апостериорное распределение не обязательно факторизуемо, поэтому для дальнейшего анализа нельзя рассматривать маргинальные распределения по отдельности --- они приведены только для иллюстрации результата.}
-	\label{pic:bayesian-estimation}
-\end{figure}
-
-Помимо метапараметров (количество цепей, параметр $a$ для <<шага-растяжки>> или соответствующих параметров для других шагов) важной является инициализация сэмплера. Несмотря на теоретически предсказываемое <<забывание>> состояния цепей в течении нескольких $\tau$, в большинстве практических задач начальное положение цепей желательно задавать разумным образом. Здесь пригодится результат раздела \ref{sec:rough-estimation}, дающий возможность простым и быстрым способом можно получить $\vec{n}_{rough}$ --- грубую оценку $\vec{n}$. Следуя практической рекомендации из статьи \cite{ForemanMackey2016}, инициализируем $N_{walker}$ цепей значениями, близкими к этой оценке, но дополнительно разбросанными в соответствии с нормальным распределением числа фотонов в каждом бине. Стандартное отклонение этого начального разброса должно быть заметно меньше разброса самих данных\footnote{\textquote[\cite{ForemanMackey2016}]{Another general approach is to start the walkers in a very tight N-dimensional ball in parameter space around one point that is expected to be close to the maximum probability point.}}, например $\hat{\sigma}_{rough} / 10$, где $\hat{\sigma}_{rough}$ --- выборочное стандартное отклонение, расчитанное по элементам $\vec{n}_{rough}$.
-
-Результат таким образом проведённого сэмплирования для демонстрационной задачи приведён на \ref{pic:bayesian-estimation}.
-
-
-\section{Деконволюция экспериментальных данных}
-
-Общий метод байесовской деконволюции, изложенный в предыдущем разделе, применим теперь к экспериментальным данным.
-
-В этом разделе будем рассматривать преобразование фотоэлектронов, испущенных фотокатодом ФЭУ под воздействием собранных фотонов, в импульс анодного тока, стекающего с его анодной RC-цепочки. На этом этапе преобразований сигнала определяется и временные характеристики (форма размытия импульса во времени зависит от параметров анодной цепи и собственной формы сигнала ФЭУ), и его амплитуда, причём значение последней носит случайный характер для каждого фотона, однако среднее её значение измеряется в процессе калибровки детектора. При этом система <<ФЭУ + анодная схема + АЦП>> является линейной с высокой точностью, и небольшая коррекция нелинейности применяется к данным для компенсации тех небольших искажений, что всё же проявляются \cite{Sphere2015}.
-
-Детальное описание схем подключения и питания ФЭУ, схему преобразования и усиления сигнала, а также характеристики использованных аналого-цифровых преобразователей можно найти в работе \cite{SphereDetector2020}.
-
-\subsection{Экспериментальная рандомизированная импульсная характеристика}
-
-\label{sec:experimental-rir}
-
-Определим случайную функцию $\tilde{h}(t)$, которую будем использовать в качестве рандомизированной импульсной характеристики системы. Сначала факторизуем её следующим образом
+A detailed description of the PMT connection and power supply circuits, the amplification circuit, as well as the characteristics of the used ADC converters can be found in \cite{SphereDetector2020}. For purposes of this work, we define detector's randomized impulse response as 
 
 \begin{equation}
 	\label{eq:experimental-rir}
 	\tilde{h}(t) = C \, \tilde{C}_{PMT} \, h_I(t)
 \end{equation}
 
-Здесь
-
-\begin{enumerate}
-	\item $h_I(t)$ --- функция времени, описывающая \textit{форму} импульсной характеристики, то есть безразмерная и нормированная таким образом, что её интеграл равен 1. Эта функция известна из лабораторного измерения, оно же показывает, что форму можно считать одинаковой для всех 109 каналов мозаики. В этой функции мы феноменологически учитываем все физические процессы, искажающие сигнал во времени: фильтрацию импульса анодной RC-цепочкой, влияние длинной линии, по которой сигнал передаётся с мозаики ФЭУ к бортовому компьютеру, а также любые другие частотно-зависимые характеристики операционных усилителей или АЦП. График $h_I(t)$ изображён на верхней панели рис. \ref{pic:experimental-rir-params}.
-	\item $\tilde{C}_{PMT}$ --- случайная величина, описывающая неопределённость коэффициента усиления ФЭУ. Лавинообразный процесс генерации вторичных электронов сильно зависит от случайных процессов, проходящих в области первого динода, и в зависимости от них коэффициент усиления также оказывается случайной величиной --- это и есть источник <<рандомизированности>> импульсной характеристики. $\tilde{C}_{PMT}$ безразмерна и масштабирована так, чтобы $\mathbb{E} \tilde{C}_{PMT} = 1$, плотность и функция распределения показана на нижней панели рис. \ref{pic:experimental-rir-params}.
-	\item $C$ --- масштабный коэффициент, размерность совпадает с размерностью сигнала $s(t)$. Также можно сказать, что с точки зрения экспериментальных данных это \textit{средний абсолютный коэффициент усиления} данного канала. Для иллюстрации этого заметим, что для однородного во времени шумового сигнала в длинном окне ($N \rightarrow \infty$)
-	
-	\begin{equation}
-		\label{eq:C-coeff-description}
-		\begin{gathered}
-			\mathbb{E} \left[ \int_{1}^{N} S(t) dt \right] = \mathbb{E} \left[ \sum_{i=1}^{N} \left( n_i \int_{\infty} h(t) dt \right) \right] = \mathbb{E} \left[ \int_{\infty} h(t) dt \right] \sum_{i=1}^{N} n_i = C \sum_{i=1}^{N} n_i \\
-			\frac{1}{N} \, \mathbb{E} \left[ \int S(t) dt \right] = C \frac{1}{N} \sum_{i=1}^{N} n_i \\
-			\bar{S} = C \bar{n}
-		\end{gathered}
-	\end{equation}
-	
-	Иначе говоря, $C$ --- коэффициент пропорциональности между средним значением числа фотоэлектронов в бине и средним значением выходного сигнала. Строго говоря, $\bar{S}$ --- среднее значение \textit{интеграла} выходного сигнала за один бин, однако численно они совпадают из-за принятой временной шкалы; различие будет проявляться только в размерности: например, если $S$ выражает анодный ток и измеряется в микроамперах, то $C$ будет иметь размерность заряда (микроампер $*$ бин).
-	
-\end{enumerate}
-
 \begin{figure}
 	\centering
 	\includegraphics[width=0.85\columnwidth]{experimental-ir-params}
-	\caption{Компоненты экспериментальной рандомизированной импульсной характеристики. Функция $h_I(t)$ (верхняя панель) описывает форму импульса во времени, а случайная величина $\tilde{C}_{PMT}$ (функции распределения и плотности вероятности на нижней панели) --- неопределённость коэффициента усиления ФЭУ.}
+	\caption{SPHERE-2 PMT's randomized impulse response. $h_I(t)$ (top panel) is the signal's shape in time domain, $\tilde{C}_{PMT}$ (bottom panel: PDF and CDF) --- dimensionless random PMT amplification coeffient.}
 	\label{pic:experimental-rir-params}
 \end{figure}
 
-Постоянный коэффициент калибровки $C$ не влияет на статистические свойства системы, и пока можно считать равным единице, его роль будет описана в разделе \ref{sec:expdata-preparation-for-deconvolution}.
+Where
 
-Получив РИХ, можно смоделировать отклик установки на определённый входной $\vec{n}$ и провести деконволюцию, чтобы оценить корректность работы метода, аналогично тому, как это было проделано с <<игрушечной>> РИХ (\ref{eq:example-problem-rir}). На рис. \ref{pic:bayesian-deconvolution-with-experimantal-rir} приведён результат такой процедуры. По сравнению с решением <<игрушечной>> задачи, приведённым на рис. \ref{pic:bayesian-estimation}, очевидна худшая точность деконволюции, что вполне объяснимо --- в первом случае РИХ быстро спадала во времени, была ограничена всего $L_1=5$ отсчётами, а её амплитуда варьировалась от $0.75$ до $1$; реальная РИХ, напротив, имеет широкий основной пик (около $5$ отсчётов) и длинный хвост, а её амплитуда варьируется в пределах от $0$ до $2$-$3$  относительно среднего значения. Однако в этом и состоит главное достоинство статистической деконволюции: неполнота информации не ведёт к некорректности метода (что, вероятнее всего, случилось бы в случае с обыкновенной, детерминистичной деконволюцией методом взятия частного фурье-образов свёрнутого сигнала и импульсной характеристики), но предсказуемым образом отражается в результатах.
+\begin{enumerate}
+	\item $h_I(t)$ --- shape of the impulse response, defined by time characteristics of the PMT and signal amplification circuit. Measured in the laboratory and plotted on the top panel of Fig. \ref{pic:experimental-rir-params}. Normalized to have integral 1.
+	\item $\tilde{C}_{PMT}$ --- dimensionless random PMT amplification coefficient, normalized to have a mean value of 1. It's PDF and CDF are plotted on the bottom panel of Fig. \ref{pic:experimental-rir-params}.
+	\item $C$ --- scale coefficient. It is measured during detector calibration and applied to signals earlier in data processing pipeline.
+\end{enumerate}
 
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{bayesian-deconvolution-with-experimantal-rir}
-	\caption{Решение задачи байесовской деконволюции для РИХ, определённой выражением (\ref{eq:experimental-rir}). Синие столбцы --- истинный входной сигнал $\vec{n}$, розовые полосы --- первичная грубая оценка, зелёным изображены маргинальные апостериорные распределения в центральных бинах (см. описание рис. \ref{pic:bayesian-estimation}).}
-	\label{pic:bayesian-deconvolution-with-experimantal-rir}
-\end{figure}
+We illustrate deconvolution procedure on toy input data: Poisson background with mean $\lambda=20$ photons per time bin and a <<signal>> photon packet: 3 bins with additional Poisson signal with $\lambda_{\mathrm{signal}}=40$. Fig. \ref{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding} illustrates the system's input and output on the top panel and the deconvolution results on the bottom panel.
 
-\subsection{Модификация процедуры для применения к реальным данным}
-
-Перед тем как, наконец, перейти от исследования метода к деконволюции реальных данных, необходимо внести в описанную процедуру две важные модификации.
-
-\subsubsection{Учёт неопределённости экспериментального сигнала}
-
-\label{sec:likelihood-with-error-in-signal}
-
-Функция правдоподобия, введённая в разделе \ref{sec:bayesian-deconvolution-solution}, и её аппроксимация, описанная в подразделе \ref{sec:likelihood-as-multivar-normal}, справедливы для случая, когда сигнал на выходе известен точно. В этом случае не совсем корректно определение правдоподобия как \textit{вероятности} получить данный сигнал $\vec{s}$ при фиксированных $\vec{n}$, ведь вероятность каждой конкретную реализации непрерывного распределения равна нулю. Поэтому до сих пор под правдоподобием на самом имелась в виду \textit{плотность} этой вероятности.
-
-Однако сигнал в реальном эксперименте известен с погрешностью, в первую очередь это погрешность дискретизации АЦП. Поэтому требуется модифицировать функцию правдоподобия так, чтобы она показывала не плотность вероятности единичного значения $\vec{S}$, а вероятность нахождения $\vec{S}$ в некотором наборе состояний. В рамках байесовской интерпретации вероятности будем считать, что неопределённость измерения сигнала выражается некоторым апостериорным распределением (апостериорным относительно процедуры его экспериментального измерения) $p_{exp}(\vec{s})$. Тогда, обозначая плотность вероятности (\ref{eq:multivariate-normal-density}) $p(\vec{s}, \vec{n})$, можно записать модифицированную функцию правдоподобия в виде
-
-\begin{equation}
-	\label{eq:likelihood-with-error-general}
-	\mathcal{L}(\vec{n}) = \int_{\infty} p_{exp}(\vec{s}) \, p(\vec{s}, \vec{n}) \, d\vec{s}
-\end{equation}
-
-В эксперименте ошибка дискретизации АЦП превосходит другие источники ошибки как минимум на порядок (см. таблицу \ref{tab:s-measurement-errors}). Поэтому можно считать, что, если АЦП округляет сигнал вниз и имеет величину дискретизации $\delta$, то в $i$-том отсчёте истинное значение $s_i$ равномерно распределено между записанным округлённым значением $\bar{s}_i$ и следующей <<ступенькой>>, отстоящей от него вверх на $\delta$, и распределено независимо от других отсчётов. Иначе говоря, $p_{exp}(\vec{s}) = \prod_{i} U( \bar{s}_i, \, \bar{s}_i + \delta_s )$. Это сводит вычисление интеграла (\ref{eq:likelihood-with-error-general}) к более простому
-
-\begin{equation}
-	\label{eq:likelihood-with-error-uniform-error}
-	\mathcal{L}(\vec{n}) = \int_{s_1}^{s_1 + \delta} \int_{s_2}^{s_2 + \delta} \ldots \, \int_{s_{N}}^{s_N + \delta} p(\vec{s}, \vec{n}) \, d\vec{s}
-\end{equation}
-
-Задача вычисления функции правдоподобия сводится к интегрированию плотности вероятности многомерного нормального распределения по многомерному кубу, и представляет собой отдельную вычислительную задачу. Для её решения можно воспользоваться готовым алгоритмом адаптивного интегрирования, описанным в работе \cite{Genz1992}, имплементация которого доступна в пакете \verb|scipy.stats| \cite{2020SciPy-NMeth} в виде \verb|Fortran|-сабрутины с интерфейсом для \verb|Python|.
-
-На рис. \ref{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding} представлена постановка и решение задачи в этой форме, уже предельно близкой к задаче деконволюции экспериментальных сигналов. Величина шага дискретизации АЦП положена равной $2$, а к исходному сигналу добавлена простейшая имитация сигнала ШАЛ: к шумовым фотонам количество которых, как и раньше, выбиралось из пуассоновского распределения с $\lambda_n = 20$, в трёх центральных бинах добавлено по $2\lambda_n$ <<сигнальных>> фотонов.
 
 \begin{figure}
 	\centering
 	\includegraphics[width=0.85\columnwidth]{final-problem-and-solution}
-	\caption{Постановка и решение задачи байесовской деконволюции для экспериментальной РИХ с учётом погрешности измерения сигнала. В центре окна добавлена имитация пакета фотонов ШАЛ, двукратно превышающая фон в течение 3 бинов.}
+	\caption{Bayesian deconvolution performed on synthetic toy input data. \textbf{Top panel:} toy input data $\vec{n}$ (blue) and corresponding system's output (convolution with randomized impulse response from fig. \ref{pic:experimental-rir-params}) $\vec{s}$, orange (X axis: <<Time, bins>>). \textbf{Bottom pannel}: same input data $\vec{n}$ (blue); rough $\vec{n}$ estimation from mean values, MCMC sampling starting point (red); deconvolution result, marginal posterior distributions in each time bin (green).}
 	\label{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding}
-\end{figure}
-
-\subsubsection{Каскадное сэмплирование}
-
-Полученная функция правдоподобия (\ref{eq:likelihood-with-error-uniform-error}) всё ещё требует существенного времени для вычисления. Б\'{о}льшая часть вычислений функции правдоподобия приходится на период <<разгона>> сэмплера и набора достаточного количества итераций для устойчивой оценки времени автокорреляции $\tau$ (см. параграф \ref{sec:mcmc-implementation-details}). Этот процесс можно ускорить, если инициализировать сэмплер не точками в области грубой оценки $\vec{n}$, но некоторым промежуточным распределением, близким к конечному, но более простым в получении. Такое промежуточное распределение можно получить, рассмотрев функцию правдоподобия в приближении \textit{факторизованного} многомерного нормального распределения.
-
-Если бы корреляции между элементами случайного вектора $\vec{S}$ при заданных $\vec{n}$ были бы пренебрежимо малы (то есть попарные распределения на рис. \ref{pic:s-j-pairwise-norm-assess} имели форму окружностей), вычисление функции правдоподобия даже с учётом ошибок измерения сигнала было бы гораздо проще. А именно, оно свелось бы к перемножению вероятностей получить наблюдаемое значение \textit{в каждом отсчёте}, которые в свою очередь рассчитывались бы из функции одномерного нормального распределения. С вычислительной точки зрения такой расчёт оказывается примерно в $100$ раз эффективнее, а получающееся в результате сэмплирования этой упрощенной функции правдоподобия апостериорное распределение качественно подобно истинному.
-
-Всё это позволяет ввести процедуру каскадного сэмплирования:
-
-\begin{enumerate}
-	\item Сгенерировать длинные марковские цепи с упрощённой и вычислительно дешёвой функцией правдоподобия, тем самым получить выборку, близкую к апостериорному распределению, а также оценку времени автокорреляции $\tau$.
-	\item <<Подменить>> функцию правдоподобия на истинную, и провести сравнительно короткое финальное сэмплирование, которое сойдётся уже к искомому апостериорному распределению
-\end{enumerate}
-
-На практике оказывается достаточным провести предварительное сэмплирование на $20000$ шагов с $256$ цепями, и затем окончательное --- всего $4000 \approxeq 2 \tau$ шагов с $128$ цепями. На рис. \ref{pic:simplified-and-true-likelihood-comparison} приведено сравнение маргинальных распределений в отдельно взятом бине после предварительного и окончательного сэмплирования. Видно постепенное уточнение оценки. С точки зрения времени вычислений предварительное сэмплирование занимает примерно в $30$-$50$ раз меньше времени, несмотря на б\'{о}льшее число шагов и цепей.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{simplified-and-true-likelihood-comparison}
-	\caption{Сравнение маргинальных апостериорных распределений в отдельно взятом бине, полученных с упрощённой функцией правдоподобия (предварительный расчёт, <<разгон>> сэмплера) и с полной функцией, дающий окончательный результат.}
-	\label{pic:simplified-and-true-likelihood-comparison}
-\end{figure}
-
-
-\subsection{Подготовка экспериментальных данных}
-\label{sec:expdata-preparation-for-deconvolution}
-
-Данные эксперимента СФЕРА-2 представлены тремя сущностями, из которых нам предстоит сконструировать искомые сигналы анодного тока. Итак, для каждого из 109 каналов известны \cite{SphereDetector2020}:
-
-\begin{enumerate}
-	\item $\tilde{s}$ --- переменная компонента анодного тока в области триггера, усиленная и записанная АЦП, сохранённая в \textit{единицах кода}. Погрешность дискретизации в этих величинах составляет 1 по определению единицы кода. Также присутствует дополнительная погрешность, связанная с тем, что для перевода  сигнала в динамический диапазон АЦП к нему искусственно добавлялся постоянный ток (<<пьедестал>>). Далее из записанных событий этот пьедестал удалялся вычитанием среднего значения по выборке из $200$ шумовых отсчётов. Следовательно, если дисперсия шумовых отсчётов составляет порядка нескольких единиц кода, то погрешность, вносимая процедурой вычитания пьедестала, рассчитывается по формуле для дисперсии выборочного среднего и составит порядка $1 / \sqrt{200} \approx 0.07$ единиц кода.
-	
-	\item $\bar{s}$ --- постоянная компонента анодного тока, отфильтрованная RC-цепочкой и записанная отдельным АЦП. Показания этого АЦП сразу пересчитывались к значению в микроамперах, погрешность его составляет $0.1~\text{мкА}$, типичные значения --- от $7$ до $15~\text{мкА}$ для разных каналов, то есть погрешность измерения этой величины также на $1$ -- $2$ порядка меньше, чем погрешность дискретизации переменной части сигнала.
-	
-	\item $A$ --- коэффициент \textit{относительной} калибровки канала. Эта величина имеет следующий смысл: домножая $\tilde{s}$ и $\bar{s}$ на $A$, мы получаем сигнал, который записал бы референсный канал --- ФЭУ Hamamatsu R3886 при температуре $0^{\circ}$ и напряжении $1000~\text{В}$ на системе динодов. Величина $A$ измеряется для всех каналов экспериментально с помощью специального калибровочного кадра, а также паспортных зависимостей коэффициента усиления от температуры и давления для центрального ФЭУ, этот процесс подробно описан в работе \cite{SphereCalibration2016}. 
-	
-	Для референсного канала известно значение параметра $C$ в выражениях (\ref{eq:experimental-rir} - \ref{eq:C-coeff-description}) при условии, что сигнал измеряется в единицах кода: $C_{ref} = 0.326~\text{ед. кода} \, * \, \text{бин}$. Таким образом, для произвольного канала $C = C_{ref} / A$.
-\end{enumerate}
-
-Остаётся пересчитать $\bar{s}$ из микроамперов в единицы кода, чтобы можно было восстановить постоянную компоненту сигнала так, как она была бы записана АЦП в отсутствии разделения постоянной и переменной компоненты. Для этого необходимо:
-\begin{enumerate*}[label=\arabic*)]
-	\item разделить эту величину на $2$ (разделение тока на согласованном сопротивлении кабеля, по которому импульс передаётся от мозаики к АЦП)
-	\item ещё раз разделить на $2$ (разделение тока на два идентичных канала АЦП, в сумме дающих дискретизацию $12.5~\text{нс}$, см. \cite{SphereDetector2020})
-	\item умножить на $30$ (коэффициент усиления операционного усилителя)
-	\item преобразовать в падение напряжения на $100~\Omega$ резисторе
-	\item разделить на шаг дискретизации, который для $10$-битного АЦП с рабочим диапазоном напряжений $2~\text{В}$ будет равен $2~\text{В} / \, 2^{10} \approx 1.95~\text{мВ}$.
-\end{enumerate*}
-В итоге получим
-
-\begin{equation}
-	\label{eq:current-muA-to-code-units-conversion}
-	\bar{s} \; [\text{ед. кода}] = \frac{\left(\frac{1}{2} \cdot \frac{1}{2} \cdot 30 \cdot \bar{s} \right) \; [ \text{мкА}] \cdot 100 \; [\Omega]}{1.95 \; [\text{мВ} / \text{ед. кода}]} \approx 0.38 \; [\text{ед. кода} / \text{мкА}] \;\cdot\; \bar{s} \; [\text{мкА}]
-\end{equation}
-
-Дополнительная ошибка, вносимая при этом пересчёте, составляет порядка $1$ -- $2\%$ --- она вызвана неопределённостью параметров цепи, коэффициента усиления операционного усилителя, диапазона работы АЦП, и т.д. Разные источники ошибки измерения сигнала приведены в таблице \ref{tab:s-measurement-errors}. Видно, что доминирующей ошибкой является ошибка дискретизации, все прочие источники неопределённости составляют в сумме около $10\%$ от её величины. Поэтому в дальнейшем будем учитывать только ошибку дискретизации АЦП, что даёт возможность вычислять функцию правдоподобия сигнала как описано в разделе \ref{sec:likelihood-with-error-in-signal}.
-
-\begin{table}
-	\centering
-	\begin{tabular}{ |l|c|c| }
-		\toprule
-		\multirow{2}{*}{Источник ошибки} & \multirow{2}{*}{Распределение}
-		& Характерная величина \\
-		& & $[\text{ед. кода}]$ \\
-		\midrule
-		Дискретизация АЦП & $U$ & $1$ \\ 
-		Измерение $\bar{s}$ & $N$ & $0.38 \cdot 0.1 \approx 0.03$ \\ 
-		Перевод $\bar{s}$ в ед. кода & $N$ & $\lessapprox 0.08$ \\ 
-		Вычитание пьедестала $\tilde{s}$ & $N$ & $\lessapprox 0.07$ \\ 
-		\bottomrule
-	\end{tabular}
-	\caption{\label{tab:s-measurement-errors}Сравнение разных источников погрешностей измерения экспериментального сигнала.}
-\end{table}
-
-Таким образом, финальная процедура <<сборки>> сигнала из экспериментальных данных выглядит так:
-
-\begin{enumerate}
-	\item Перевести $\bar{s}$ из мкА в единицы кода домножением на $0.38$
-	\item Сложить $\tilde{s}$ и $\bar{s}$, получив полный сигнал $s$ в единицах кода, как он был бы записан АЦП в отсутствии разделения на постоянную и переменную компоненты
-	\item Вычислить масштабный множитель РИХ $C$ для данного канала по формуле $C_{ref} / A$, где $A$ --- коэффициент относительной калибровки
-\end{enumerate}
-
-Вообще говоря, деконволюцию можно было бы проводить уже на этом этапе, однако тогда для каждого сигнала придётся использовать свою РИХ. Заметим, что ситуацию можно облегчить, если добавить ещё один шаг:
-
-\begin{enumerate}
-	\setcounter{enumi}{3}
-	\item Привести сигнал $s$ и ошибку дискретизации к относительным единицам, разделив на $C$
-\end{enumerate}
-
-В этих относительных единицах все каналы имеют одну, единичную РИХ; все их индивидуальные характеристики оказываются выражены в величине ошибки дискретизации: канал с большим коэффициентом усиления будет давать б\'{о}льший сигнал в единицах кода и как следствие иметь меньшую ошибку округления в приведённом относительном масштабе. Кроме того, как следует из выражения (\ref{eq:C-coeff-description}), в таком масштабе \textit{среднее значение сигнала равно среднему количеству фотоэлектронов в бине}.
-
-Пример экспериментального кадра после всех описанных преобразований приведён на рис. \ref{pic:experimental-frame-example}. Наконец, к полученному сигналу можно применить процедуру деконволюции. Её результат для одного из экспериментальных сигналов приведён на рис. \ref{pic:experimental-signal-deconvolution-example}. Аналогичным образом обрабатывается каждый канал, что открывает возможность выделять оценить параметры сигнала ШАЛ в каждом из них, а значит и параметры ливня. Этому процессу посвящена следующая глава.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{experimental-frame-example}
-	\caption{Пример экспериментального события в приведённом масштабе (см. текст). Видна характерная <<змейка>> фронта черенковского света в центре кадра, и общая однородная яркость фона --- её систематическое изменение от канала к каналу объясняется разными коэффициентами сбора света с поверхности для каждого ФЭУ и, как следствие, немного разными интенсивностями фоновых фотонов. Исключены каналы $50$ и $79$, которые не работали из-за сбоя электроники.}
-	\label{pic:experimental-frame-example}
-\end{figure}
-
-\begin{figure}
-	\centering
-	\includegraphics[width=\columnwidth]{experimental-signal-deconvolution-example}
-	\caption{Результат байесовской деконволюции для 2 канала события, изображённого на рис. \ref{pic:experimental-frame-example}.}
-	\label{pic:experimental-signal-deconvolution-example}
 \end{figure}
 

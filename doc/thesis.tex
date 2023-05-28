@@ -13,15 +13,19 @@
 \usepackage[T2A,T1]{fontenc}
 \usepackage{lmodern} % несколько иное начертание латиницы
 
-\usepackage[russian]{babel}
+% TODO: remove russian
+\usepackage[english, russian]{babel}
 \usepackage{csquotes}
 
 \usepackage[left=30mm, right=20mm, top=20mm, bottom=20mm]{geometry}   %поля по требованиям факультета (с поправкой, что там ограничения на поля снизу), пакет geometry воспринимает размеры в mm, cm, in и пр.
 
-\usepackage{indentfirst}   %заставляет ТеХ делать отступ в первом абзаце главы/параграфа/раздела
+% \usepackage{indentfirst}   %заставляет ТеХ делать отступ в первом абзаце главы/параграфа/раздела
 
 \usepackage{setspace}   %пакет позволяет выставлять полуторные интервалы в тексте, но не вмешивается в подписи, таблицы и сноски
 
+\usepackage{sectsty}
+\renewcommand{\cleardoublepage}{}
+\renewcommand{\clearpage}{\vfill}
 
 \usepackage[
 	backend=biber,
@@ -62,13 +66,18 @@
 \setcounter{secnumdepth}{5}
 \newcommand{\cov}{\mathrm{cov}}
 
+\usepackage{titlesec}[compact]
 
-\usepackage{titlesec}
+\usepackage{subcaption}
+\usepackage{graphicx}
+
+\captionsetup[figure]{name=Figure}
+
 % \titlelabel{\thetitle.\quad}
-\titleformat{\chapter}[block]
-{\centering\bfseries\Huge}
-{Глава \thechapter.}
-{1.5ex}{}
+
+\titleformat{\chapter}[hang]{\bfseries\Large}{\thechapter}{1ex}{}
+\titleformat{\section}[hang]{\bfseries\large}{\thesection}{1ex}{}
+\titleformat{\subsection}[hang]{\bfseries}{\thesubsection}{1ex}{}
 
 \titleformat{\paragraph}[runin]
 {\hyphenpenalty=10000 \itshape}
@@ -80,7 +89,7 @@
 {\thesubparagraph.}
 {1ex}{}[.]
 
-\setlength{\parindent}{1.25cm} %настройка отступов
+% \setlength{\parindent}{1.25cm} %настройка отступов
 \sloppy   %убираем висячие строки  и подобное безобразие
 \clubpenalty=10000		% Запрещаем разрыв страницы после первой строки абзаца
 \widowpenalty=10000		% Запрещаем разрыв страницы перед последней строкой абзаца
@@ -111,7 +120,7 @@
 
 % \title{Байесовская деконволюция для эксперимента СФЕРА-2}
 
-\author{Игорь Вайман}
+\author{Igor Vaiman}
 
 \date{\today}
 
@@ -119,17 +128,17 @@
 	
 	\include{title}  %титульный лист
 	
-	\tableofcontents  %оглавление
+	% \tableofcontents  %оглавление
 	
 	\include{chapt0-introduction}
-	\include{chapt1-review}
+	% \include{chapt1-review}
 	\include{chapt2-sphere2}
 	\include{chapt3-deconvolution}
 	\include{chapt4-reconstruction}
 	\include{chapt5-results}
 	
-	\phantomsection
-	\addcontentsline{toc}{chapter}{СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}
-	\printbibliography[title={СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}]
+	% \phantomsection
+	% \addcontentsline{toc}{chapter}{СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ}
+	\printbibliography[title={Bibliography}]
 	
 \end{document}
