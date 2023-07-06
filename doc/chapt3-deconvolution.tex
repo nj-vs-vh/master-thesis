@@ -36,23 +36,23 @@ To study the distribution of $C(n, l)$, Monte Carlo simulations are be employed.
 
 Directly sampling $S_j$ to calculate likelihood of a particular $\vec{s}$ is computationally infeasible. We approximate the likelihood function using a multivariate normal distribution. We find this approximation suitable for input intensities as low as 4-5 $\delta$-functions per bin, which corresponds to the background intensity observed in the SPHERE-2 detector.
 
-The general form of multivariate normal distribution is
-
-\begin{equation}
-	\label{eq:multivariate-normal-density}
-	p(\vec{s}) = \left( (2 \pi)^{N+L} \, \det \Sigma \right)^{-1/2} \exp \left( - \frac{1}{2} (\vec{s} - \vec{\mu})^T \Sigma^{-1} (\vec{s} - \vec{\mu}) \right)
-\end{equation}
-
-The mean vector $\vec{\mu}$ and the covariance matrix $\Sigma$ depend on the input $\vec{n}$ and the RIR $\tilde{h}(t)$. Specifically, $\vec{\mu} \equiv \mathbb{E} \vec{S}$ can be obtained from \ref{eq:S-definition-as-random-variable} by computing mean of left and right terms and using linearity. The matrix $\Sigma$ can be expressed in terms of $C(n, l)$ autocovariance:
+The multivariate normal distribution is defined by the mean vector $\vec{\mu}$ and the covariance matrix $\Sigma$, which are computed from the input $\vec{n}$ and the RIR $\tilde{h}(t)$.
 
 \begin{equation}
 	\Sigma_{ij} = \cov(S_i, S_j) = \sum_{l=0}^{L - (i-j)} \cov(C(n_{i-l}, l), C(n_{i-l}, l + (i-j)))
 \end{equation}
 
+\begin{figure}
+	\centering
+	\includegraphics[width=0.85\columnwidth]{final-problem-and-solution}
+	\caption{Bayesian deconvolution performed on toy input data. \textbf{Top panel:} toy input data $\vec{n}$ (blue) and corresponding system's output (convolution with SPHERE-2 randomized impulse response) $\vec{s}$, orange (X axis: <<Time, bins>>). \textbf{Bottom pannel}: same input data $\vec{n}$ (blue); rough $\vec{n}$ estimation from mean values, MCMC sampling starting point (red); deconvolution result, marginal posterior distributions in each time bin (green).}
+	\label{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding}
+\end{figure}
+
 
 \section{Discretization error}
 
-This approximation assumes precise measurement of the output signal. In reality, the output signal is discretized by ADC. We assume that the ADC rounds down its input, i.e. for each recorded $s_j$, the actual input value lies somewhere between $s_j$ and $s_j + \delta$, following a uniform distribution. To account for this error, we numerically integrate the likelihood function defined by \ref{eq:multivariate-normal-density} over an $N$-dimensional cube with side length $\delta$ and a lower corner positioned at $\vec{s}$:
+This approximation assumes precise measurement of the output signal. In reality, the output signal is discretized by ADC. We assume that the ADC rounds down its input, i.e. for each recorded $s_j$, the actual input value lies somewhere between $s_j$ and $s_j + \delta$, following a uniform distribution. To account for this error, we numerically integrate the "exact" likelihood function over an $N$-dimensional cube with side length $\delta$ and a lower corner positioned at $\vec{s}$:
 
 
 \section{Posterior distribution sampling}
@@ -65,12 +65,3 @@ For this study, we utilize the affine-invariant MCMC method \cite{Goodman2010} i
 \section{Deconvolution results}
 
 We illustrate deconvolution procedure on toy input data: Poisson background with mean $\lambda=20$ photons per time bin and a <<signal>> photon packet: 3 bins with additional Poisson signal with $\lambda_{\mathrm{signal}}=40$. Fig. \ref{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding} illustrates the system's input and output on the top panel and the deconvolution results on the bottom panel.
-
-
-\begin{figure}
-	\centering
-	\includegraphics[width=0.85\columnwidth]{final-problem-and-solution}
-	\caption{Bayesian deconvolution performed on toy input data. \textbf{Top panel:} toy input data $\vec{n}$ (blue) and corresponding system's output (convolution with SPHERE-2 randomized impulse response) $\vec{s}$, orange (X axis: <<Time, bins>>). \textbf{Bottom pannel}: same input data $\vec{n}$ (blue); rough $\vec{n}$ estimation from mean values, MCMC sampling starting point (red); deconvolution result, marginal posterior distributions in each time bin (green).}
-	\label{pic:bayesian-deconvolution-with-experimantal-rir-and-rounding}
-\end{figure}
-

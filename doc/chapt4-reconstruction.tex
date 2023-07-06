@@ -1,27 +1,24 @@
 \chapter{Extensive air shower parameters estimation}
 
+\begin{figure}
+	\label{pic:deconvolution-and-reconstruction}
+	\centering
+	\includegraphics[width=0.83\columnwidth]{deconvolution-and-reconstruction}
+	\caption{Full signal reconstruction for experimental event \#10675. Common X axis: channel number, see \cite{SphereCalibration2016} for numbering scheme. Top panel: experimental data with calibration coefficiens applied. Second-to-top panel: deconvolution output, photon count in each time bin. Three bottom panels: reconstructed photon packet parameters $n_{EAS}, \mu_t, \sigma_t$ --- dots and error bars represent marginal means and standard deviations; dimmed values are signals with $\Delta \mathrm{BIC} \in (0, 4]$, negative $\Delta \mathrm{BIC}$ (background-only channels) are omitted.}
+\end{figure}
+
 \section{Shower photon packets}
 \label{sec:signal-reconstruction}
 
-After deconvolution, our goal is to identify EAS photons among the background. These photons are expected to arrive in "packets" with a normal distribution of arrival times, characterized by parameters $n_{EAS}$ (total number of photons), $\mu_t$ (mean arrival time), and $\sigma_t$ (arrival time standard deviation). The background, composed of starlight and zodiacal light reflected from the snow, follows a Poisson distribution with mean $\lambda_{n}$ known from calibration.
+After deconvolution, we detect EAS photons among the background by searching for photon "packets" with a normal distribution of arrival times described by parameters $n_{EAS}$ (total photons), $\mu_t$ (mean arrival time), and $\sigma_t$ (arrival time standard deviation). The background comprises starlight and zodiacal light reflected from the snow, modeled as a Poisson distribution with a mean $\lambda_{n}$ known from calibration.
 
-We approach this as a Bayesian problem, seeking the posterior distribution of EAS photon packet parameters based on the distribution for $\vec{n}$ obtained from deconvolution.
+We approach this as a Bayesian problem, aiming to find the posterior distribution of photon packet parameters based on the distribution of $\vec{n}$ obtained from deconvolution. This is achieved using a similar MCMC technique. Performing both steps of the analysis within the same Bayesian framework lets us effectively chain these two analysis together, while also keeping them separate.
 
-The likelihood function is calculated by sampling signal, subtracting it from the $\vec{n}$ and calculating Poisson likelihood for the remaining background signal.
+To assess the significance of the EAS signal in each channel and remove background-only channels from further analysis, we employ the Bayesian information criterion (BIC) \cite{Schwarz1978}.
 
-After that, we use similar MCMC technique to get the final signal reconstruction result: posterior distribution of photon packet parameters. Performing both steps of the analysis within the same Bayesian framework lets us effectively chain these two analysis together, while also keeping them separate.
 
-We can also use Bayesian information criterion (BIC) \cite{Schwarz1978} to calculate the significance of EAS signal in each channel. We use it to remove background-only channels from further analysis.
 
-Figure \ref{pic:deconvolution-and-reconstruction} shows an example of full EAS photon packet parameters reconstruction for an experimental event.
-
-\begin{figure}
-	\centering
-	\includegraphics[width=0.86\columnwidth]{deconvolution-and-reconstruction}
-	\caption{Full signal reconstruction for experimental event \#10675. Common X axis: channel number, see \cite{SphereCalibration2016} for numbering scheme. Top panel: experimental data with calibration coefficiens applied. Second-to-top panel: deconvolution output, photon count in each time bin. Three bottom panels: reconstructed photon packet parameters $n_{EAS}, \mu_t, \sigma_t$ --- dots and error bars represent marginal means and standard deviations; dimmed values are signals with $\Delta \mathrm{BIC} \in (0, 4]$, negative $\Delta \mathrm{BIC}$ (background-only channels) are omitted.}
-	\label{pic:deconvolution-and-reconstruction}
-\end{figure}
-
+Figure \ref{pic:deconvolution-and-reconstruction} presents an example illustrating the complete reconstruction of EAS photon packet parameters for an experimental event.
 
 \section{Shower parameter reconstruction}
 
